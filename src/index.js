@@ -1,159 +1,111 @@
+// src/index.js
 const { DriveService } = require('./drive-service.js');
-const { SheetsService } = require('./sheets-service.js');
+const PostgresService = require('./postgres-service.js');
+require('dotenv').config();
 
-// --- CONFIGURAÇÃO DO MONITOR ---
-const INTERVALO_EM_SEGUNDOS = 30;
-// --------------------------------
+const INTERVALO_EM_SEGUNDOS = parseInt(process.env.MONITOR_INTERVAL) || 30;
+const MIN_EDICAO_SEGUNDOS = 30;
+const MAX_INTERVALO_MINUTOS = 50;
 
 const driveService = new DriveService();
-const sheetsService = new SheetsService();
+const postgresService = new PostgresService();
 
 let savedPageToken;
-let compositeKeyToRowIndexMap = new Map();
+const ultimoTimestampMap = new Map();
 
-// Armazena último timestamp por (docId + editor) para calcular intervalo
-const ultimoTimestampMap = new Map(); // "docId-editor" → Date
-
-const MIN_EDICAO_SEGUNDOS = 30;     // 30 segundos
-const MAX_INTERVALO_MINUTOS = 50;   // 50 minutos
-
-/**
- * Inicializa o monitor
- */
-async function initializeMonitor() {
-  console.log("Iniciando monitor...");
-  try {
-    savedPageToken = await driveService.getStartToken();
-    console.log("Token inicial do Drive salvo.");
-    
-    await sheetsService.initHeaders();
-    
-    compositeKeyToRowIndexMap = await sheetsService.loadSheetData();
-    
-    console.log("--- Monitoramento iniciado ---");
-    const intervalInMs = INTERVALO_EM_SEGUNDOS * 1000;
-    setInterval(runMonitorCycle, intervalInMs);
-    runMonitorCycle();
-    
-  } catch (error) {
-    console.error("Falha fatal ao inicializar o monitor:", error.message);
-    process.exit(1);
+// --- FUNÇÃO SEGURA PARA CONVERTER DATA ---
+function parseDateTime(dateInput) {
+  if (!dateInput) return new Date();
+  
+  // Se já for Date
+  if (dateInput instanceof Date) return dateInput;
+  
+  // Se for string no formato DD/MM/AAAA HH:MM
+  if (typeof dateInput === 'string') {
+    const [date, time] = dateInput.split(' ');
+    if (!date || !time) return new Date();
+    const [day, month, year] = date.split('/');
+    if (!day || !month || !year) return new Date();
+    return new Date(`${year}-${month}-${day}T${time}:00Z`);
   }
+  
+  return new Date(); // fallback
 }
 
-/**
- * Ciclo principal de monitoramento
- */
+async function initializeMonitor() {
+  console.log('Iniciando monitor → Neon...');
+  savedPageToken = await driveService.getStartToken();
+  setInterval(runMonitorCycle, INTERVALO_EM_SEGUNDOS * 1000);
+  runMonitorCycle();
+}
+
 async function runMonitorCycle() {
   if (!savedPageToken) return;
 
-  console.log(`\n[${new Date().toISOString()}]`);
-  console.log(`Iniciando ciclo... Buscando mudanças desde o último token.`);
-  
   try {
     const { changes, newStartPageToken } = await driveService.listChanges(savedPageToken);
-    savedPageToken = newStartPageToken; 
+    savedPageToken = newStartPageToken;
 
-    if (changes.length === 0) {
-      console.log("Nenhuma mudança detectada neste ciclo.");
-    } else {
-      console.log(`Detectadas ${changes.length} mudanças. Processando arquivos...`);
-      
-      const modifiedFilesData = await driveService.processFileChanges(changes);
+    if (changes.length === 0) return;
 
-      if (modifiedFilesData.length > 0) {
-        console.log(`SUCESSO! ${modifiedFilesData.length} arquivos relevantes modificados detectados.`);
-        
-        for (const fileData of modifiedFilesData) {
-          const editorName = fileData.ultimo_editor_nome || 'N/A';
-          const key = `${fileData.documento_id}-${editorName}`;
-          const existingRowIndex = compositeKeyToRowIndexMap.get(key);
+    const modifiedFilesData = await driveService.processFileChanges(changes);
+    if (modifiedFilesData.length === 0) return;
 
-          // --- 1. Converter data_ultima_modificacao para Date ---
-          const [dataStr, horaStr] = fileData.data_ultima_modificacao.split(' ');
-          const [dia, mes, ano] = dataStr.split('/');
-          const agora = new Date(`${ano}-${mes}-${dia}T${horaStr}:00Z`);
-
-          // --- 2. Calcular tempo a ser adicionado ---
-          let tempoAdicionadoMin = 0;
-          if (ultimoTimestampMap.has(key)) {
-            const ultimo = ultimoTimestampMap.get(key);
-            const diffSegundos = (agora - ultimo) / 1000;
-            const diffMinutos = diffSegundos / 60;
-
-            if (diffSegundos >= MIN_EDICAO_SEGUNDOS && diffMinutos <= MAX_INTERVALO_MINUTOS) {
-              tempoAdicionadoMin = Math.round(diffMinutos * 10) / 10; // 1 casa decimal
-            }
-          }
-
-          // --- 3. Ler dados da planilha e definir data_primeira_edicao ---
-          let tempoAtualPlanilha = 0;
-          let dataPrimeiraEdicao = null;
-
-          if (existingRowIndex) {
-            const rowData = await sheetsService.getRowData(existingRowIndex);
-            tempoAtualPlanilha = parseFloat(rowData.tempo_total_editado_min) || 0;
-            
-            if (rowData.data_primeira_edicao && rowData.data_primeira_edicao.trim() !== '') {
-              dataPrimeiraEdicao = rowData.data_primeira_edicao;
-            }
-          }
-
-          // Primeira detecção: usar data_ultima_modificacao (com limite de criação)
-          if (!dataPrimeiraEdicao) {
-            const [criacaoData, criacaoHora] = fileData.data_criacao.split(' ');
-            const [diaC, mesC, anoC] = criacaoData.split('/');
-            const dataCriacaoArquivo = new Date(`${anoC}-${mesC}-${diaC}T${criacaoHora}:00Z`);
-            
-            const dataUltimaMod = agora;
-
-            dataPrimeiraEdicao = dataUltimaMod >= dataCriacaoArquivo 
-              ? fileData.data_ultima_modificacao 
-              : fileData.data_criacao;
-          }
-
-          // --- 4. Somar tempo e preparar dados ---
-          const novoTempoTotal = tempoAtualPlanilha + tempoAdicionadoMin;
-
-          const dataForSheet = {
-            documento_id: fileData.documento_id,
-            documento_nome: fileData.documento_nome,
-            ultimo_editor_nome: editorName,
-            data_ultima_modificacao: fileData.data_ultima_modificacao,
-            data_primeira_edicao: dataPrimeiraEdicao,
-            documento_link: fileData.documento_link,
-            pastas_pai_nomes: fileData.pastas_pai_nomes,
-            tempo_total_editado_min: novoTempoTotal.toFixed(1),
-          };
-
-          // --- 5. Atualizar ou adicionar linha ---
-          if (existingRowIndex) {
-            await sheetsService.updateRow(existingRowIndex, dataForSheet);
-            if (tempoAdicionadoMin > 0) {
-              console.log(`[Planilha] Linha ${existingRowIndex} ATUALIZADA: +${tempoAdicionadoMin.toFixed(1)} min → ${novoTempoTotal.toFixed(1)} min total`);
-            }
-          } else {
-            const newRowIndex = await sheetsService.appendRow(dataForSheet);
-            if (newRowIndex > 0) {
-              compositeKeyToRowIndexMap.set(key, newRowIndex);
-              console.log(`[Planilha] Linha ${newRowIndex} ADICIONADA: ${novoTempoTotal.toFixed(1)} min (primeira edição: ${dataPrimeiraEdicao})`);
-            }
-          }
-
-          // --- 6. Atualizar timestamp em memória ---
-          ultimoTimestampMap.set(key, agora);
-        }
-      } else {
-        console.log("As mudanças foram filtradas (ver logs 'Debug' acima).");
+    // --- REMOVER DUPLICATAS ---
+    const uniqueFiles = [];
+    const seen = new Set();
+    for (const file of modifiedFilesData) {
+      const key = `${file.documento_id}-${file.ultimo_editor_nome}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueFiles.push(file);
       }
     }
-    
-    console.log(`Próxima verificação em ${INTERVALO_EM_SEGUNDOS} segundos.`);
 
-  } catch (error) {
-    console.error("Erro grave durante o ciclo de monitoramento:", error.message);
+    for (const fileData of uniqueFiles) {
+      const editorName = fileData.ultimo_editor_nome || 'Desconhecido';
+      const key = `${fileData.documento_id}-${editorName}`;
+
+      const agora = parseDateTime(fileData.data_ultima_modificacao);
+
+      let tempoAdicionadoMin = 0;
+      if (ultimoTimestampMap.has(key)) {
+        const diffSegundos = (agora - ultimoTimestampMap.get(key)) / 1000;
+        const diffMinutos = diffSegundos / 60;
+        if (diffSegundos >= MIN_EDICAO_SEGUNDOS && diffMinutos <= MAX_INTERVALO_MINUTOS) {
+          tempoAdicionadoMin = Math.round(diffMinutos * 10) / 10;
+        }
+      }
+
+      const current = await postgresService.getCurrentTime(fileData.documento_id, editorName);
+      const totalMinutes = current.totalMinutes + tempoAdicionadoMin;
+      
+      // --- firstEdit: string ISO ou null ---
+      let firstEditISO = current.firstEdit;
+      if (!firstEditISO) {
+        firstEditISO = agora.toISOString();
+      }
+
+      await postgresService.upsert({
+        documento_id: fileData.documento_id,
+        documento_nome: fileData.documento_nome,
+        documento_link: fileData.documento_link,
+        pastas_pai_nomes: fileData.pastas_pai_nomes,
+        ultimo_editor_nome: editorName,
+        data_primeira_edicao: firstEditISO,
+        data_ultima_modificacao: agora.toISOString(),
+        tempo_total_editado_min: totalMinutes.toFixed(1)
+      });
+
+      if (tempoAdicionadoMin > 0) {
+        console.log(`[Neon] +${tempoAdicionadoMin} min → ${editorName} em "${fileData.documento_nome}"`);
+      }
+
+      ultimoTimestampMap.set(key, agora);
+    }
+  } catch (err) {
+    console.error('Erro no ciclo:', err.message);
   }
 }
 
-// --- Inicia o Monitor ---
 initializeMonitor();
