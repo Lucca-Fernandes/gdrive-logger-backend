@@ -14,28 +14,77 @@ app.use(express.json());
 app.use('/api', routes);
 
 // === MONITOR 24/7 ===
-let pageToken = null;
 const ultimoEdit = new Map();
+const PAGE_TOKEN_ID = 'PAGE_TOKEN_SYSTEM'; // ID especial
+
+async function getPageToken() {
+  const res = await pool.query(
+    'SELECT page_token FROM document_editors WHERE "documentId" = $1',
+    [PAGE_TOKEN_ID]
+  );
+  return res.rows[0]?.page_token || null;
+}
+
+async function setPageToken(token) {
+  await pool.query(`
+    INSERT INTO document_editors ("documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token)
+    VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
+    ON CONFLICT ("documentId", "editorName") DO UPDATE SET
+      page_token = $2,
+      "lastEdit" = NOW()
+  `, [PAGE_TOKEN_ID, token]);
+}
 
 async function cicloMonitor() {
   try {
     const drive = getClient();
+    let pageToken = await getPageToken();
+
     if (!pageToken) {
+      console.log('[Monitor] Primeira execução: obtendo startPageToken...');
       const res = await drive.changes.getStartPageToken();
       pageToken = res.data.startPageToken;
+      await setPageToken(pageToken);
+      console.log(`[Monitor] Token inicial salvo!`);
+      return;
     }
+
+    console.log(`[Monitor] Verificando mudanças...`);
 
     const res = await drive.changes.list({
       pageToken,
-      fields: 'changes(file/id,file/name,file/modifiedTime),newStartPageToken',
-      pageSize: 100
+      pageSize: 100,
+      fields: 'newStartPageToken,changes(file/id,file/name,file/modifiedTime,file/mimeType))',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true
     });
 
-    pageToken = res.data.newStartPageToken;
+    const changes = res.data.changes || [];
+    const newToken = res.data.newStartPageToken;
 
-    for (const change of res.data.changes || []) {
+    if (newToken && newToken !== pageToken) {
+      await setPageToken(newToken);
+      console.log(`[Monitor] Token atualizado!`);
+    }
+
+    if (changes.length === 0) {
+      console.log('[Monitor] Nenhuma mudança.');
+      return;
+    }
+
+    console.log(`[Monitor] ${changes.length} mudança(s)!`);
+
+    for (const change of changes) {
       const file = change.file;
       if (!file?.id || !file?.modifiedTime) continue;
+
+      const mime = file.mimeType || '';
+      const isDoc = mime.includes('document') || 
+                    mime.includes('spreadsheet') || 
+                    mime.includes('presentation') || 
+                    (file.name && file.name.endsWith('.docx'));
+
+      if (!isDoc) continue;
 
       const key = `${file.id}-desconhecido`;
       const agora = new Date(file.modifiedTime);
@@ -43,31 +92,39 @@ async function cicloMonitor() {
 
       if (ultimoEdit.has(key)) {
         const diff = (agora - ultimoEdit.get(key)) / 1000;
-        if (diff >= 30 && diff <= 3000) {
+        if (diff >= 30 && diff <= 3600) {
           tempoAdd = Math.round(diff / 60 * 10) / 10;
         }
+      } else {
+        tempoAdd = 0.5;
       }
 
       const current = await pool.query(
-        `SELECT "totalMinutes" FROM document_editors WHERE "documentId" = $1 AND "editorName" = 'desconhecido'`,
-        [file.id]
+        'SELECT "totalMinutes" FROM document_editors WHERE "documentId" = $1 AND "editorName" = $2',
+        [file.id, 'desconhecido']
       );
 
       const total = (current.rows[0]?.totalMinutes || 0) + tempoAdd;
 
       await pool.query(`
-        INSERT INTO document_editors ("documentId", "documentName", "editorName", "totalMinutes", "lastEdit")
-        VALUES ($1, $2, 'desconhecido', $3, $4)
+        INSERT INTO document_editors (
+          "documentId", "documentName", "editorName", 
+          "firstEdit", "lastEdit", "totalMinutes"
+        ) VALUES ($1, $2, 'desconhecido', $3, $3, $4)
         ON CONFLICT ("documentId", "editorName") DO UPDATE SET
           "totalMinutes" = EXCLUDED."totalMinutes",
           "lastEdit" = EXCLUDED."lastEdit"
-      `, [file.id, file.name || 'Sem nome', total, agora.toISOString()]);
+      `, [file.id, file.name || 'Sem nome', agora.toISOString(), total]);
 
-      if (tempoAdd > 0) console.log(`[Neon] +${tempoAdd} min → ${file.name}`);
+      if (tempoAdd > 0) {
+        console.log(`[Neon] +${tempoAdd} min → ${file.name}`);
+      }
+
       ultimoEdit.set(key, agora);
     }
+
   } catch (err) {
-    console.error('Erro no monitor:', err.message);
+    console.error('[Monitor] Erro:', err.message);
   }
 }
 
@@ -77,8 +134,8 @@ async function cicloMonitor() {
     await authenticate();
     console.log('Sistema iniciado: Monitor + API');
 
+    await cicloMonitor();
     setInterval(cicloMonitor, 30 * 1000);
-    cicloMonitor();
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
