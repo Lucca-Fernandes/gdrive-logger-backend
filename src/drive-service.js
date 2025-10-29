@@ -10,11 +10,13 @@ class DriveService {
 
   async authenticate() {
     try {
+      // Lê o JSON completo da variável de ambiente
       const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+
       const jwtClient = new google.auth.JWT(
         serviceAccount.client_email,
-        null,
-        serviceAccount.private_key,
+        null, // sem keyFile
+        serviceAccount.private_key.replace(/\\n/g, '\n'), // conserta \n
         ['https://www.googleapis.com/auth/drive.readonly']
       );
 
@@ -95,7 +97,7 @@ class DriveService {
         documento_link: file.webViewLink || '',
         pastas_pai_nomes: folderPathStr,
         data_ultima_modificacao: modificadoBR,
-        ultimo_editor_nome: 'Desconhecido', // A API de changes não retorna editor
+        ultimo_editor_nome: 'Desconhecido',
       });
     }
     return files;
