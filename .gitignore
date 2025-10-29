@@ -21,6 +21,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+render.yaml
+
 .env
 .env.*
 !.env.example
