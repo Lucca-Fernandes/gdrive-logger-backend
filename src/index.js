@@ -13,14 +13,9 @@ const postgresService = new PostgresService();
 let savedPageToken;
 const ultimoTimestampMap = new Map();
 
-// --- FUNÇÃO SEGURA PARA CONVERTER DATA ---
 function parseDateTime(dateInput) {
   if (!dateInput) return new Date();
-  
-  // Se já for Date
   if (dateInput instanceof Date) return dateInput;
-  
-  // Se for string no formato DD/MM/AAAA HH:MM
   if (typeof dateInput === 'string') {
     const [date, time] = dateInput.split(' ');
     if (!date || !time) return new Date();
@@ -28,12 +23,12 @@ function parseDateTime(dateInput) {
     if (!day || !month || !year) return new Date();
     return new Date(`${year}-${month}-${day}T${time}:00Z`);
   }
-  
-  return new Date(); // fallback
+  return new Date();
 }
 
 async function initializeMonitor() {
   console.log('Iniciando monitor → Neon...');
+  await driveService.authenticate();
   savedPageToken = await driveService.getStartToken();
   setInterval(runMonitorCycle, INTERVALO_EM_SEGUNDOS * 1000);
   runMonitorCycle();
@@ -51,7 +46,6 @@ async function runMonitorCycle() {
     const modifiedFilesData = await driveService.processFileChanges(changes);
     if (modifiedFilesData.length === 0) return;
 
-    // --- REMOVER DUPLICATAS ---
     const uniqueFiles = [];
     const seen = new Set();
     for (const file of modifiedFilesData) {
@@ -79,8 +73,6 @@ async function runMonitorCycle() {
 
       const current = await postgresService.getCurrentTime(fileData.documento_id, editorName);
       const totalMinutes = current.totalMinutes + tempoAdicionadoMin;
-      
-      // --- firstEdit: string ISO ou null ---
       let firstEditISO = current.firstEdit;
       if (!firstEditISO) {
         firstEditISO = agora.toISOString();

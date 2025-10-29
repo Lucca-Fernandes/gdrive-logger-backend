@@ -10,21 +10,16 @@ async function getPool() {
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false }
     });
-    pool.on('connect', () => console.log('[DB] Conectado ao Neon (queries.js)'));
-    pool.on('error', (err) => console.error('[DB] Erro no pool:', err.message));
   }
   return pool;
 }
 
-// --- FORMATA DATA PARA BR ---
 function formatDateBR(isoString) {
   if (!isoString) return '-';
   const date = new Date(isoString);
   if (isNaN(date)) return '-';
-  
   const brOffset = -3 * 60;
   const local = new Date(date.getTime() + brOffset * 60 * 1000);
-  
   const pad = n => n.toString().padStart(2, '0');
   return `${pad(local.getUTCDate())}/${pad(local.getUTCMonth() + 1)}/${local.getUTCFullYear()} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}`;
 }

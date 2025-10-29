@@ -18,10 +18,10 @@ app.get('/api/data', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`API → http://localhost:${PORT}/api/data`);
+  console.log(`API rodando em http://localhost:${PORT}/api/data`);
 });
