@@ -1,9 +1,8 @@
-// src/db.js
 require('dotenv').config();
 
 let pool;
 
-// Carrega pg com import() dinâmico (resolve o ERR_REQUIRE_ESM)
+
 async function initPool() {
   const { Pool } = await import('pg');
   pool = new Pool({
