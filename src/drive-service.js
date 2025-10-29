@@ -5,20 +5,20 @@ require('dotenv').config();
 class DriveService {
   constructor() {
     this.drive = null;
-    this.pageToken = null;
   }
 
   async authenticate() {
     try {
-      // Lê o JSON completo da variável de ambiente
       const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-
-      const jwtClient = new google.auth.JWT(
-        serviceAccount.client_email,
-        null, // sem keyFile
-        serviceAccount.private_key.replace(/\\n/g, '\n'), // conserta \n
-        ['https://www.googleapis.com/auth/drive.readonly']
-      );
+      
+      // Extrai APENAS a chave privada (sem JSON)
+      const privateKey = serviceAccount.private_key.replace(/\\n/g, '\n');
+      
+      const jwtClient = new google.auth.JWT({
+        email: serviceAccount.client_email,
+        key: privateKey,  // ← APENAS a chave
+        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      });
 
       await jwtClient.authorize();
       this.drive = google.drive({ version: 'v3', auth: jwtClient });
@@ -30,11 +30,13 @@ class DriveService {
   }
 
   async getStartToken() {
+    if (!this.drive) throw new Error('Autentique primeiro');
     const res = await this.drive.changes.getStartPageToken();
     return res.data.startPageToken;
   }
 
   async listChanges(pageToken) {
+    if (!this.drive) throw new Error('Autentique primeiro');
     const res = await this.drive.changes.list({
       pageToken,
       fields: 'changes(file/id, file/name, file/modifiedTime, file/parents, file/webViewLink), newStartPageToken',
@@ -48,6 +50,7 @@ class DriveService {
   }
 
   async getFileParents(fileId) {
+    if (!this.drive) throw new Error('Autentique primeiro');
     try {
       const res = await this.drive.files.get({
         fileId,
@@ -61,6 +64,7 @@ class DriveService {
 
   async getFolderPath(parentId, path = []) {
     if (!parentId) return path;
+    if (!this.drive) throw new Error('Autentique primeiro');
     try {
       const res = await this.drive.files.get({
         fileId: parentId,
@@ -97,7 +101,7 @@ class DriveService {
         documento_link: file.webViewLink || '',
         pastas_pai_nomes: folderPathStr,
         data_ultima_modificacao: modificadoBR,
-        ultimo_editor_nome: 'Desconhecido',
+        ultimo_editor_nome: 'Desconhecido', // API de changes não retorna editor
       });
     }
     return files;
