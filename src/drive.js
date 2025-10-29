@@ -1,30 +1,26 @@
 // src/drive.js
 const { google } = require('googleapis');
-const { JWT } = require('google-auth-library');
+const path = require('path');
 
 let driveClient = null;
 
 async function authenticate() {
   try {
-    const raw = process.env.GOOGLE_SERVICE_ACCOUNT;
-    if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT não definido');
+    const keyFile = path.join(process.cwd(), 'service-account.json');
+    
+    if (!require('fs').existsSync(keyFile)) {
+      throw new Error(`ARQUIVO NÃO ENCONTRADO: ${keyFile}`);
+    }
 
-    const serviceAccount = JSON.parse(raw);
-
-    // Corrige \n na chave
-    const privateKey = (serviceAccount.private_key || '')
-      .replace(/\\n/g, '\n')
-      .trim();
-
-    const auth = new JWT({
-      email: serviceAccount.client_email,
-      key: privateKey,
+    const auth = new google.auth.GoogleAuth({
+      keyFile,
       scopes: ['https://www.googleapis.com/auth/drive.readonly']
     });
 
-    await auth.authorize();
-    driveClient = google.drive({ version: 'v3', auth });
-    console.log('Google Drive autenticado com sucesso (via ENV)!');
+    const client = await auth.getClient();
+    driveClient = google.drive({ version: 'v3', auth: client });
+    
+    console.log('Google Drive autenticado com sucesso (via keyFile)!');
   } catch (err) {
     console.error('Erro na autenticação:', err.message);
     throw err;
