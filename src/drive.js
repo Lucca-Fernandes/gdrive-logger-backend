@@ -1,20 +1,36 @@
 // src/drive.js
 const { google } = require('googleapis');
+const { JWT } = require('google-auth-library');
+const path = require('path');
 
 let driveClient = null;
 
 async function authenticate() {
-  const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-  const jwtClient = new google.auth.JWT(
-    serviceAccount.client_email,
-    null,
-    serviceAccount.private_key.replace(/\\n/g, '\n'),
-    ['https://www.googleapis.com/auth/drive.readonly']
-  );
+  try {
+    const keyFile = path.join(process.cwd(), 'service-account.json');
+    
+    console.log('Usando keyFile:', keyFile);
 
-  await jwtClient.authorize();
-  driveClient = google.drive({ version: 'v3', auth: jwtClient });
-  console.log('Google Drive autenticado.');
+    if (!require('fs').existsSync(keyFile)) {
+      throw new Error(`ARQUIVO NÃO ENCONTRADO: ${keyFile}`);
+    }
+
+    // MÉTODO OFICIAL: JWT COM keyFile
+    const auth = new JWT({
+      keyFile, // ← ARQUIVO JSON INTEIRO
+      scopes: ['https://www.googleapis.com/auth/drive.readonly']
+    });
+
+    // Autoriza
+    await auth.authorize();
+
+    driveClient = google.drive({ version: 'v3', auth });
+    
+    console.log('Google Drive autenticado com sucesso (método oficial)!');
+  } catch (err) {
+    console.error('Erro na autenticação:', err.message);
+    throw err;
+  }
 }
 
 function getClient() {
