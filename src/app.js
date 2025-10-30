@@ -11,8 +11,9 @@ app.use(cors());
 app.use(express.json());
 app.use('/api', routes);
 
+// === CONFIGURAÇÕES ===
 const ultimoEdit = new Map();
-const TOKEN_ROW_ID = 'PAGE_TOKEN_SYSTEM'; // Exato como no banco
+const TOKEN_ROW_ID = 'PAGE_TOKEN_SYSTEM'; // ID especial no banco
 
 // === FUNÇÕES DO TOKEN ===
 async function getPageToken() {
@@ -44,7 +45,7 @@ async function setPageToken(token) {
   }
 }
 
-// === FUNÇÃO PARA MONTAR CAMINHO DA PASTA ===
+// === MONTAR CAMINHO DA PASTA (RECURSIVO) ===
 async function buildFolderPath(folderId, drive, path = []) {
   if (!folderId || folderId === 'root') {
     return path.reverse().join('/') || '/';
@@ -62,7 +63,7 @@ async function buildFolderPath(folderId, drive, path = []) {
       return await buildFolderPath(folder.parents[0], drive, path);
     }
   } catch (err) {
-    console.log('[FolderPath] Erro:', err.message);
+    console.log(`[FolderPath] Erro ao buscar pasta ${folderId}:`, err.message);
   }
   return path.reverse().join('/') || '/';
 }
@@ -70,13 +71,14 @@ async function buildFolderPath(folderId, drive, path = []) {
 // === MONITOR 24/7 ===
 async function cicloMonitor() {
   console.log('[Monitor] === INICIANDO CICLO ===');
-  
+
   try {
     const drive = getClient();
     let pageToken = await getPageToken();
 
+    // PRIMEIRA EXECUÇÃO
     if (!pageToken) {
-      console.log('[Monitor] Pegando token inicial...');
+      console.log('[Monitor] Primeira execução: obtendo token inicial...');
       const res = await drive.changes.getStartPageToken();
       pageToken = res.data.startPageToken;
       await setPageToken(pageToken);
@@ -84,12 +86,13 @@ async function cicloMonitor() {
       return;
     }
 
-    console.log(`[Monitor] Verificando com token: ${pageToken.substring(0, 20)}...`);
+    console.log(`[Monitor] Verificando mudanças desde token: ${pageToken.substring(0, 20)}...`);
 
+    // CAMPOS OBRIGATÓRIOS PARA PEGAR TUDO
     const res = await drive.changes.list({
       pageToken,
       pageSize: 100,
-      fields: 'newStartPageToken,changes(file/id,file/name,file/modifiedTime,file/webViewLink,file/lastModifyingUser,file/parents,file/mimeType))',
+      fields: 'newStartPageToken,changes(file(id,name,modifiedTime,webViewLink,lastModifyingUser(displayName),parents,mimeType))',
       includeItemsFromAllDrives: true,
       supportsAllDrives: true
     });
@@ -97,11 +100,12 @@ async function cicloMonitor() {
     const newToken = res.data.newStartPageToken;
     if (newToken && newToken !== pageToken) {
       await setPageToken(newToken);
+      console.log('[Monitor] Token atualizado!');
     }
 
     const changes = res.data.changes || [];
     if (changes.length === 0) {
-      console.log('[Monitor] Nenhuma mudança.');
+      console.log('[Monitor] Nenhuma mudança detectada.');
       return;
     }
 
@@ -112,7 +116,7 @@ async function cicloMonitor() {
       if (!file?.id || !file?.modifiedTime) continue;
 
       // === LINK DO DOCUMENTO ===
-      const webViewLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
+      const documentLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
 
       // === NOME DO EDITOR ===
       const editorName = file.lastModifyingUser?.displayName || 'desconhecido';
@@ -123,10 +127,11 @@ async function cicloMonitor() {
         try {
           folderPath = await buildFolderPath(file.parents[0], drive);
         } catch (err) {
-          console.log('[Monitor] Erro ao montar pasta:', err.message);
+          console.log(`[Erro] Pasta do arquivo ${file.id}:`, err.message);
         }
       }
 
+      // === CÁLCULO DO TEMPO ===
       const key = `${file.id}-${editorName}`;
       const agora = new Date(file.modifiedTime);
       let tempoAdd = 0;
@@ -137,9 +142,10 @@ async function cicloMonitor() {
           tempoAdd = Math.round(diff / 60 * 10) / 10;
         }
       } else {
-        tempoAdd = 0.5;
+        tempoAdd = 0.5; // Primeira detecção
       }
 
+      // === BUSCAR TOTAL ATUAL ===
       const current = await pool.query(
         'SELECT "totalMinutes" FROM document_editors WHERE "documentId" = $1 AND "editorName" = $2',
         [file.id, editorName]
@@ -147,9 +153,10 @@ async function cicloMonitor() {
 
       const total = (current.rows[0]?.totalMinutes || 0) + tempoAdd;
 
+      // === SALVAR NO BANCO ===
       await pool.query(`
         INSERT INTO document_editors (
-          "documentId", "documentName", "documentLink", "folderPath", "editorName", 
+          "documentId", "documentName", "documentLink", "folderPath", "editorName",
           "firstEdit", "lastEdit", "totalMinutes"
         ) VALUES ($1, $2, $3, $4, $5, $6, $6, $7)
         ON CONFLICT ("documentId", "editorName") DO UPDATE SET
@@ -161,7 +168,7 @@ async function cicloMonitor() {
       `, [
         file.id,
         file.name || 'Sem nome',
-        webViewLink,
+        documentLink,
         folderPath,
         editorName,
         agora.toISOString(),
@@ -169,24 +176,29 @@ async function cicloMonitor() {
       ]);
 
       if (tempoAdd > 0) {
-        console.log(`[Neon] +${tempoAdd} min → ${file.name} (${editorName})`);
+        console.log(`[Neon] +${tempoAdd} min → ${file.name} (${editorName}) [${folderPath}]`);
       }
 
       ultimoEdit.set(key, agora);
     }
 
+    console.log('[Monitor] === CICLO CONCLUÍDO ===');
+
   } catch (err) {
-    console.error('[Monitor] ERRO:', err.message);
+    console.error('[Monitor] ERRO CRÍTICO:', err.message);
   }
 }
 
-// === INICIAR ===
+// === INICIAR SERVIDOR ===
 (async () => {
   try {
     await authenticate();
     console.log('Sistema iniciado: Monitor + API');
 
+    // Primeiro ciclo
     await cicloMonitor();
+
+    // Depois a cada 30 segundos
     setInterval(cicloMonitor, 30 * 1000);
 
     const PORT = process.env.PORT || 10000;
