@@ -12,36 +12,71 @@ app.use(express.json());
 app.use('/api', routes);
 
 const ultimoEdit = new Map();
-const TOKEN_ROW_ID = 'PAGE_TOKEN_001'; // ID especial
+const TOKEN_ROW_ID = 'PAGE_TOKEN_SYSTEM'; // Exato como no banco
 
-// === TOKEN NO BANCO (SUA TABELA!) ===
+// === FUNÇÕES DO TOKEN ===
 async function getPageToken() {
-  const res = await pool.query(
-    'SELECT page_token FROM document_editors WHERE "documentId" = $1',
-    [TOKEN_ROW_ID]
-  );
-  return res.rows[0]?.page_token || null;
+  try {
+    const res = await pool.query(
+      'SELECT page_token FROM document_editors WHERE "documentId" = $1',
+      [TOKEN_ROW_ID]
+    );
+    return res.rows[0]?.page_token || null;
+  } catch (err) {
+    console.error('[Token] Erro ao ler:', err.message);
+    return null;
+  }
 }
 
 async function setPageToken(token) {
-  await pool.query(`
-    INSERT INTO document_editors (
-      "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token
-    ) VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
-    ON CONFLICT ("documentId", "editorName") DO UPDATE SET
-      page_token = $2,
-      "lastEdit" = NOW()
-  `, [TOKEN_ROW_ID, token]);
+  try {
+    await pool.query(`
+      INSERT INTO document_editors (
+        "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token
+      ) VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
+      ON CONFLICT ("documentId", "editorName") DO UPDATE SET
+        page_token = $2,
+        "lastEdit" = NOW()
+    `, [TOKEN_ROW_ID, token]);
+    console.log(`[Token] Salvo: ${token.substring(0, 20)}...`);
+  } catch (err) {
+    console.error('[Token] Erro ao salvar:', err.message);
+  }
 }
 
-// === MONITOR (COMO NO GOOGLE SHEETS) ===
+// === FUNÇÃO PARA MONTAR CAMINHO DA PASTA ===
+async function buildFolderPath(folderId, drive, path = []) {
+  if (!folderId || folderId === 'root') {
+    return path.reverse().join('/') || '/';
+  }
+
+  try {
+    const res = await drive.files.get({
+      fileId: folderId,
+      fields: 'name, parents',
+      supportsAllDrives: true
+    });
+    const folder = res.data;
+    path.push(folder.name);
+    if (folder.parents && folder.parents[0]) {
+      return await buildFolderPath(folder.parents[0], drive, path);
+    }
+  } catch (err) {
+    console.log('[FolderPath] Erro:', err.message);
+  }
+  return path.reverse().join('/') || '/';
+}
+
+// === MONITOR 24/7 ===
 async function cicloMonitor() {
+  console.log('[Monitor] === INICIANDO CICLO ===');
+  
   try {
     const drive = getClient();
     let pageToken = await getPageToken();
 
     if (!pageToken) {
-      console.log('[Monitor] Primeira vez: pegando token inicial...');
+      console.log('[Monitor] Pegando token inicial...');
       const res = await drive.changes.getStartPageToken();
       pageToken = res.data.startPageToken;
       await setPageToken(pageToken);
@@ -49,23 +84,50 @@ async function cicloMonitor() {
       return;
     }
 
+    console.log(`[Monitor] Verificando com token: ${pageToken.substring(0, 20)}...`);
+
     const res = await drive.changes.list({
       pageToken,
       pageSize: 100,
-      fields: 'newStartPageToken,changes(file/id,file/name,file/modifiedTime)',
+      fields: 'newStartPageToken,changes(file/id,file/name,file/modifiedTime,file/webViewLink,file/lastModifyingUser,file/parents,file/mimeType))',
       includeItemsFromAllDrives: true,
       supportsAllDrives: true
     });
 
-    if (res.data.newStartPageToken) {
-      await setPageToken(res.data.newStartPageToken);
+    const newToken = res.data.newStartPageToken;
+    if (newToken && newToken !== pageToken) {
+      await setPageToken(newToken);
     }
 
-    for (const change of res.data.changes || []) {
+    const changes = res.data.changes || [];
+    if (changes.length === 0) {
+      console.log('[Monitor] Nenhuma mudança.');
+      return;
+    }
+
+    console.log(`[Monitor] ${changes.length} mudança(s) detectada(s)!`);
+
+    for (const change of changes) {
       const file = change.file;
       if (!file?.id || !file?.modifiedTime) continue;
 
-      const key = `${file.id}-desconhecido`;
+      // === LINK DO DOCUMENTO ===
+      const webViewLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
+
+      // === NOME DO EDITOR ===
+      const editorName = file.lastModifyingUser?.displayName || 'desconhecido';
+
+      // === CAMINHO DA PASTA ===
+      let folderPath = '/';
+      if (file.parents && file.parents.length > 0) {
+        try {
+          folderPath = await buildFolderPath(file.parents[0], drive);
+        } catch (err) {
+          console.log('[Monitor] Erro ao montar pasta:', err.message);
+        }
+      }
+
+      const key = `${file.id}-${editorName}`;
       const agora = new Date(file.modifiedTime);
       let tempoAdd = 0;
 
@@ -80,42 +142,59 @@ async function cicloMonitor() {
 
       const current = await pool.query(
         'SELECT "totalMinutes" FROM document_editors WHERE "documentId" = $1 AND "editorName" = $2',
-        [file.id, 'desconhecido']
+        [file.id, editorName]
       );
 
       const total = (current.rows[0]?.totalMinutes || 0) + tempoAdd;
 
       await pool.query(`
         INSERT INTO document_editors (
-          "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes"
-        ) VALUES ($1, $2, 'desconhecido', $3, $3, $4)
+          "documentId", "documentName", "documentLink", "folderPath", "editorName", 
+          "firstEdit", "lastEdit", "totalMinutes"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $6, $7)
         ON CONFLICT ("documentId", "editorName") DO UPDATE SET
-          "totalMinutes" = EXCLUDED."totalMinutes",
-          "lastEdit" = EXCLUDED."lastEdit"
-      `, [file.id, file.name || 'Sem nome', agora.toISOString(), total]);
+          "documentName" = EXCLUDED."documentName",
+          "documentLink" = EXCLUDED."documentLink",
+          "folderPath" = EXCLUDED."folderPath",
+          "lastEdit" = EXCLUDED."lastEdit",
+          "totalMinutes" = EXCLUDED."totalMinutes"
+      `, [
+        file.id,
+        file.name || 'Sem nome',
+        webViewLink,
+        folderPath,
+        editorName,
+        agora.toISOString(),
+        total
+      ]);
 
       if (tempoAdd > 0) {
-        console.log(`[Neon] +${tempoAdd} min → ${file.name}`);
+        console.log(`[Neon] +${tempoAdd} min → ${file.name} (${editorName})`);
       }
 
       ultimoEdit.set(key, agora);
     }
 
   } catch (err) {
-    console.error('Erro no monitor:', err.message);
+    console.error('[Monitor] ERRO:', err.message);
   }
 }
 
 // === INICIAR ===
 (async () => {
-  await authenticate();
-  console.log('Sistema iniciado: Monitor + API');
+  try {
+    await authenticate();
+    console.log('Sistema iniciado: Monitor + API');
 
-  await cicloMonitor();
-  setInterval(cicloMonitor, 30 * 1000);
+    await cicloMonitor();
+    setInterval(cicloMonitor, 30 * 1000);
 
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`API rodando em http://localhost:${PORT}/api/data`);
-  });
+    const PORT = process.env.PORT || 10000;
+    app.listen(PORT, () => {
+      console.log(`API rodando em http://localhost:${PORT}/api/data`);
+    });
+  } catch (err) {
+    console.error('Erro fatal:', err.message);
+    process.exit(1);
+  }
 })();
