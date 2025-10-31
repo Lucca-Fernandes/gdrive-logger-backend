@@ -35,7 +35,7 @@ async function setPageToken(token) {
       INSERT INTO document_editors (
         "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token
       ) VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
-      ON CONFLICT ("documentId", "editorName") DO UPDATE SET
+        ON CONFLICT ("documentId") DO UPDATE SET
         page_token = $2,
         "lastEdit" = NOW()
     `, [TOKEN_ROW_ID, token]);
