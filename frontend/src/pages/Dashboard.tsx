@@ -97,8 +97,23 @@ export default function Dashboard() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Paper elevation={6} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+    <Container maxWidth="xl" sx={{ py: 2, mt: -8}}>
+
+      
+      <Box 
+        display="flex" 
+        justifyContent="center" 
+        mb={0} // Adiciona uma margem abaixo do logo
+      >
+        <img 
+          src="../../public/logo_NIC-PNG.png" // <-- MUDE ESTE CAMINHO
+          alt="Logo da Empresa" 
+          height={400} width={600} // Ajuste a altura conforme necessário
+        />
+      </Box>
+      
+
+      <Paper elevation={6} sx={{ borderRadius: 3, overflow: 'hidden', mt: -8 }}>
         {/* HEADER */}
         <Box p={4} bgcolor="primary.main" color="white">
           <Box display="flex" justifyContent="space-between" alignItems="center">

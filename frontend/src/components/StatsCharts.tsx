@@ -11,8 +11,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Card, CardContent, Typography, Box, Grid } from '@mui/material';
-import { AccessTime, Person, FolderOpen, InsertDriveFile } from '@mui/icons-material';
+import { Card, CardContent, Typography, Box } from '@mui/material';
+import Grid from '@mui/material/Unstable_Grid2';
+import { AccessTime, Person, InsertDriveFile } from '@mui/icons-material';
 
 interface Editor {
   editorName: string;
@@ -66,14 +67,17 @@ export default function StatsCharts({ data }: StatsChartsProps) {
   };
 
   return (
-    <Box mt={4}>
-      <Typography variant="h6" fontWeight="bold" mb={3} color="primary">
-        Gestão à Vista
+    // ==========================================================
+    // ALTERAÇÃO AQUI
+    // ==========================================================
+    <Box mt={4} px={3}> 
+      <Typography variant="h6" fontWeight="bold" mb={3} align="center" color="primary">
+        Monitoramento de Produtividade
       </Typography>
 
       <Grid container spacing={3}>
         {/* MÉTRICAS RÁPIDAS */}
-        <Grid xs={12} sm={6} md={3}>
+        <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#e3f2fd', height: '100%' }}>
             <CardContent>
               <Box display="flex" alignItems="center" gap={2}>
@@ -91,7 +95,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        <Grid xs={12} sm={6} md={3}>
+        <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#f3e5f5', height: '100%' }}>
             <CardContent>
               <Box display="flex" alignItems="center" gap={2}>
@@ -109,7 +113,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        <Grid xs={12} sm={6} md={3}>
+        <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#fff3e0', height: '100%' }}>
             <CardContent>
               <Box display="flex" alignItems="center" gap={2}>
@@ -127,24 +131,6 @@ export default function StatsCharts({ data }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        <Grid xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: '#e8f5e9', height: '100%' }}>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={2}>
-                <FolderOpen color="success" />
-                <Box>
-                  <Typography variant="h4" fontWeight="bold">
-                    {pieData.length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Ativos hoje
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
         {/* GRÁFICO DE PIZZA */}
         <Grid xs={12} md={6}>
           <Card>
@@ -152,7 +138,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
               <Typography variant="subtitle1" fontWeight="bold" mb={2}>
                 Tempo por Editor
               </Typography>
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={400}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -160,7 +146,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
                     cy="50%"
                     labelLine={false}
                     label={renderCustomLabel}
-                    outerRadius={80}
+                    outerRadius={120}
                     fill="#8884d8"
                     dataKey="value"
                   >
@@ -182,7 +168,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
               <Typography variant="subtitle1" fontWeight="bold" mb={2}>
                 Documentos Mais Editados
               </Typography>
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={400}>
                 <BarChart data={barData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
