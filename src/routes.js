@@ -4,15 +4,14 @@ const router = express.Router();
 const { pool } = require('./db.js');
 
 /**
- * FUNÇÃO CORRIGIDA
  * Converte a data (armazenada em UTC) para o fuso horário de São Paulo (GMT-3)
  * e formata para o padrão pt-BR.
+ * USADO APENAS PARA O CSV (/export).
  */
 function formatBR(date) {
   if (!date) return '';
   const d = new Date(date);
   
-  // 'toLocaleString' permite forçar o fuso horário e o formato
   return d.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
     year: 'numeric',
@@ -31,7 +30,7 @@ router.get('/data', async (req, res) => {
     let values = [];
     let idx = 1;
 
-    // Remove o registro do PAGE_TOKEN da listagem
+    // Filtra o registro do sistema
     query += ` WHERE "documentId" != 'PAGE_TOKEN_SYSTEM'`;
 
     if (editor) {
@@ -51,9 +50,12 @@ router.get('/data', async (req, res) => {
 
     const result = await pool.query(query, values);
 
+    // ===================================================================
+    // CORREÇÃO: Remover o .map() e enviar 'result.rows' diretamente.
+    // O frontend (Dashboard.tsx) vai formatar a data ISO.
+    // ===================================================================
     res.json({
-      // Esta linha agora usará a nova função formatBR
-      data: result.rows.map(r => ({ ...r, lastEdit: formatBR(r.lastEdit), firstEdit: formatBR(r.firstEdit) })),
+      data: result.rows,
       total: parseInt(countRes.rows[0].count),
       page: parseInt(page),
       limit: parseInt(limit)
@@ -98,7 +100,7 @@ router.get('/export', async (req, res) => {
   
   const csv = [
     'Documento,Editor,Minutos,Última Edição',
-    // Esta linha também usará a nova função formatBR
+    // Aqui mantemos o formatBR, pois o CSV precisa da data formatada
     ...result.rows.map(r => `"${r.documentName}","${r.editorName}",${r.totalMinutes},"${formatBR(r.lastEdit)}"`)
   ].join('\n');
 
