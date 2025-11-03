@@ -31,21 +31,26 @@ async function getPageToken() {
 
 async function setPageToken(token) {
   try {
-    const res = await pool.query(`
-      INSERT INTO document_editors (
-        "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token
-      ) VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
-      ON CONFLICT ("documentId") DO UPDATE SET
-        page_token = $2,
-        "lastEdit" = NOW()
-    `, [TOKEN_ROW_ID, token]);
+    // TENTA UPDATE PRIMEIRO
+    const updateRes = await pool.query(
+      `UPDATE document_editors SET page_token = $1, "lastEdit" = NOW() WHERE "documentId" = $2`,
+      [token, TOKEN_ROW_ID]
+    );
 
-    console.log(`[Token] Salvo com sucesso: ${token.substring(0, 10)}...`);
-    return res;
+    // SE NÃO ATUALIZOU NENHUM (não existia), FAZ INSERT
+    if (updateRes.rowCount === 0) {
+      await pool.query(`
+        INSERT INTO document_editors (
+          "documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token
+        ) VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)
+      `, [TOKEN_ROW_ID, token]);
+      console.log(`[Token] Registro criado: ${token.substring(0, 10)}...`);
+    } else {
+      console.log(`[Token] Atualizado: ${token.substring(0, 10)}...`);
+    }
   } catch (err) {
     console.error('[Token] FALHA AO SALVAR TOKEN:', err.message);
-    console.error('[Token] Token que falhou:', token);
-    throw err; // Força o erro para ser capturado no ciclo
+    throw err;
   }
 }
 
