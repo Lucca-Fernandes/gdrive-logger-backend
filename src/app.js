@@ -14,8 +14,12 @@ app.use('/api', routes);
 // === CONFIGURAÇÕES ===
 const TOKEN_ROW_ID = 'PAGE_TOKEN_SYSTEM'; // ID especial no banco
 const TEMPO_CICLO = 30 * 1000; // 30 segundos
+const LIMITE_INATIVO = 3000; // 50 minutos (50 * 60)
 
-// === FUNÇÕES DO TOKEN ===
+// Cache de pastas em memória (para performance da API)
+const folderCache = new Map();
+
+// === FUNÇÕES DO TOKEN (Melhoradas) ===
 async function getPageToken() {
   try {
     const res = await pool.query(
@@ -37,66 +41,112 @@ async function setPageToken(token) {
       [token, TOKEN_ROW_ID]
     );
 
-    // SE NÃO ATUALIZOU NENHUM (não existia), INSERE
+    // SE NÃO ATUALIZOU NENHUM (não existia), FAZ INSERT
     if (updateRes.rowCount === 0) {
       await pool.query(
-        `INSERT INTO document_editors ("documentId", "editorName", page_token, "lastEdit") VALUES ($1, $2, $3, NOW())`,
-        [TOKEN_ROW_ID, 'SYSTEM', token]
+        `INSERT INTO document_editors ("documentId", "documentName", "editorName", "firstEdit", "lastEdit", "totalMinutes", page_token) 
+         VALUES ($1, 'Sistema', 'monitor', NOW(), NOW(), 0, $2)`,
+        [TOKEN_ROW_ID, token]
       );
+      console.log(`[Token] Registro criado: ${token.substring(0, 10)}...`);
+    } else {
+      console.log(`[Token] Atualizado: ${token.substring(0, 10)}...`);
     }
   } catch (err) {
-    console.error('[Token] Erro ao salvar:', err.message);
-    throw err; // Propaga o erro para o ciclo principal
+    console.error('[Token] FALHA AO SALVAR TOKEN:', err.message);
+    throw err;
   }
 }
 
-// === FUNÇÃO DE CAMINHO (sem alterações) ===
-async function buildFolderPath(folderId, drive, cache) {
-  if (cache.has(folderId)) {
-    return cache.get(folderId);
+// === FUNÇÃO DE CAMINHO (COM CACHE) ===
+async function buildFolderPath(folderId, drive) {
+  // 1. Verifica no cache
+  if (folderCache.has(folderId)) {
+    return folderCache.get(folderId);
   }
-  if (!folderId) return '/';
+  if (!folderId || folderId === 'root') {
+    return '/';
+  }
+
+  const path = [];
+  let currentFolderId = folderId;
 
   try {
-    const res = await drive.files.get({
-      fileId: folderId,
-      fields: 'name, parents',
-    });
-    const name = res.data.name;
-    const parentId = res.data.parents ? res.data.parents[0] : null;
+    while (currentFolderId && currentFolderId !== 'root') {
+      // 2. Se um NÍVEL no meio do caminho já está no cache, usa-o
+      if (folderCache.has(currentFolderId)) {
+        path.push(folderCache.get(currentFolderId));
+        break; // Sai do loop, pois encontramos um caminho cacheado
+      }
 
-    if (parentId) {
-      const parentPath = await buildFolderPath(parentId, drive, cache);
-      const fullPath = (parentPath === '/' ? '' : parentPath) + '/' + name;
-      cache.set(folderId, fullPath);
-      return fullPath;
-    } else {
-      cache.set(folderId, '/'); // Raiz
-      return '/';
+      // 3. Se não está no cache, busca na API
+      const res = await drive.files.get({
+        fileId: currentFolderId,
+        fields: 'name, parents',
+        supportsAllDrives: true
+      });
+
+      const folder = res.data;
+      path.push(folder.name); // Adiciona o nome
+      
+      // Salva este nível no cache para o futuro
+      const partialPath = '/' + path.slice().reverse().join('/');
+      folderCache.set(currentFolderId, partialPath);
+
+      currentFolderId = (folder.parents && folder.parents[0]) ? folder.parents[0] : null;
     }
+
+    const fullPath = '/' + path.reverse().join('/');
+    folderCache.set(folderId, fullPath); // Cacheia o caminho completo final
+    return fullPath === "//" ? "/" : fullPath;
+
   } catch (err) {
-    // Se a pasta não for encontrada (ex: órfã), trata como Raiz
-    console.warn(`[Path] Pasta ${folderId} não encontrada ou sem acesso.`);
-    cache.set(folderId, '/');
+    console.error(`[FolderPath] Erro ao buscar pasta ${currentFolderId}: ${err.message}`);
+    folderCache.set(folderId, '/'); // Cacheia o erro como '/'
     return '/';
   }
 }
 
-// === CICLO DE MONITORAMENTO (ALTERADO) ===
+
+// === CICLO DE MONITORAMENTO (CORRIGIDO) ===
 async function cicloMonitor() {
   console.log('[Monitor] === INICIANDO CICLO ===');
   const drive = getClient();
   let pageToken = await getPageToken();
-  const folderCache = new Map(); // Cache de pastas por ciclo
 
-  console.log(`[Monitor] Verificando mudanças desde token: ${pageToken ? pageToken.substring(0, 10) + '...' : 'INÍCIO'}`);
+  if (!pageToken) {
+    console.log('[Monitor] Primeira execução: obtendo token inicial...');
+    try {
+      const res = await drive.changes.getStartPageToken({ supportsAllDrives: true });
+      pageToken = res.data.startPageToken;
+      await setPageToken(pageToken);
+      console.log('[Monitor] Token inicial salvo! Próximo ciclo em 30s.');
+      return; // Retorna e espera o próximo ciclo
+    } catch (err) {
+      console.error('[Monitor] Falha ao obter token inicial:', err.message);
+      return; // Tenta de novo no próximo ciclo
+    }
+  }
+  
+  console.log(`[Monitor] Verificando mudanças desde token: ${pageToken.substring(0, 20)}...`);
 
-  const res = await drive.changes.list({
-    pageToken: pageToken,
-    fields: 'newStartPageToken, changes(file(id, name, modifiedTime, lastModifyingUser(displayName), webViewLink, parents))',
-    includeItemsFromAllDrives: true,
-    supportsAllDrives: true,
-  });
+  let res;
+  try {
+    res = await drive.changes.list({
+      pageToken,
+      pageSize: 100,
+      fields: 'newStartPageToken,changes(file(id,name,modifiedTime,webViewLink,lastModifyingUser(displayName),parents,mimeType))',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true
+    });
+  } catch (err) {
+    console.error('[Monitor] ERRO CRÍTICO na API (changes.list):', err.message);
+    if (err.message.includes('Page token is not valid')) {
+       console.error('[Monitor] Token de página inválido. Resetando token...');
+       await setPageToken(null); // Reseta o token para obter um novo no próximo ciclo
+    }
+    return; // Para o ciclo aqui
+  }
 
   const changes = res.data.changes || [];
   const newToken = res.data.newStartPageToken;
@@ -107,32 +157,25 @@ async function cicloMonitor() {
     console.log(`[Monitor] ${changes.length} mudança(s) detectada(s)!`);
 
     for (const change of changes) {
-      // -----------------------------------------------------------------
-      // NOVO: Bloco try...catch movido para DENTRO do loop
-      // Isso impede que um arquivo com erro trave o ciclo todo.
-      try {
+      // ==========================================================
+      // CORREÇÃO: Bloco try...catch DENTRO do loop
+      try { 
         const file = change.file;
         if (!file?.id || !file?.modifiedTime || !file.lastModifyingUser) {
-          // Ignora mudanças sem dados suficientes (ex: exclusões)
-          continue; 
+          continue; // Ignora se não tiver dados essenciais
         }
 
         const documentLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
         const editorName = file.lastModifyingUser?.displayName || 'desconhecido';
 
+        // Usa a nova função com cache
         let folderPath = '/';
         if (file.parents && file.parents.length > 0) {
-          // O try/catch interno para o path já existia e está bom
-          try {
-            folderPath = await buildFolderPath(file.parents[0], drive, folderCache);
-          } catch (err) {
-            console.log(`[Path] Erro ao buscar pasta do arquivo ${file.id}:`, err.message);
-          }
+            folderPath = await buildFolderPath(file.parents[0], drive);
         }
 
-        // -----------------------------------------------------------------
-        // NOVO: Lógica de cálculo "Stateless" (sem Map)
-        // Busca o estado atual direto do banco
+        // ==========================================================
+        // CORREÇÃO: Lógica "Stateless" (sem Map)
         const agora = new Date(file.modifiedTime);
         let tempoAdd = 0;
 
@@ -146,18 +189,18 @@ async function cicloMonitor() {
           const ultimoEditDoDB = new Date(current.rows[0].lastEdit);
           const diff = (agora - ultimoEditDoDB) / 1000; // Em segundos
 
-          // Ignora edições muito rápidas (provável ruído) ou muito longas (provável "gap")
-          if (diff >= 30 && diff <= 3600) { // Entre 30s e 1h
+          // A regra de 50 minutos (LIMITE_INATIVO)
+          if (diff >= 30 && diff <= LIMITE_INATIVO) {
             tempoAdd = Math.round(diff / 60 * 10) / 10; // Converte para minutos
           }
+          // Se diff < 30 ou > 3000, tempoAdd continua 0
         } else {
-          // Primeiro registro desse editor nesse documento, adiciona tempo base
+          // Primeiro registro desse editor, adiciona tempo base
           tempoAdd = 0.5;
         }
 
         const total = (current.rows[0]?.totalMinutes || 0) + tempoAdd;
-        // Fim da lógica "Stateless"
-        // -----------------------------------------------------------------
+        // ==========================================================
 
         await pool.query(`
           INSERT INTO document_editors (
@@ -183,37 +226,30 @@ async function cicloMonitor() {
         if (tempoAdd > 0) {
           console.log(`[Neon] +${tempoAdd} min → ${file.name} (${editorName}) [${folderPath}]`);
         }
-
-      } catch (err) {
-        // Loga o erro do arquivo específico e continua o loop
+      
+      } catch (err) { 
         console.error(`[Monitor] Falha ao processar arquivo ${change.file?.id}:`, err.message);
-        // O loop 'for' vai para a próxima 'change'
+        // Continua para a próxima mudança, não para o ciclo
       }
-      // Fim do bloco try...catch interno
-      // -----------------------------------------------------------------
-
-    } // Fim do 'for (const change of changes)'
+      // ==========================================================
+    } // Fim do 'for'
   }
 
   // ATUALIZA O TOKEN APÓS PROCESSAR TUDO
-  // Esta parte agora é alcançada mesmo que arquivos falhem
   if (newToken && newToken !== pageToken) {
-    console.log(`[Monitor] Novo token recebido: ${newToken.substring(0, 10)}...`);
     try {
       await setPageToken(newToken);
       console.log('[Monitor] Token atualizado com sucesso!');
     } catch (err) {
-      // Se falhar aqui, o próximo ciclo re-tentará com o token antigo,
-      // mas o try/catch interno impedirá o "loop mortal"
-      console.error('[Monitor] ERRO CRÍTICO AO ATUALIZAR TOKEN!', err.message);
+      console.error('[Monitor] ERRO CRÍTICO AO ATUALIZAR TOKEN!');
     }
   }
 
   console.log('[Monitor] === CICLO CONCLUÍDO ===');
 }
 
-// === INICIAR SERVIDOR (ALTERADO) ===
-// NOVO: Padrão "setTimeout" recursivo para evitar sobreposição
+// === INICIAR SERVIDOR (CORRIGIDO) ===
+// CORREÇÃO: Padrão "setTimeout" recursivo para evitar sobreposição
 (async () => {
   try {
     await authenticate();
@@ -224,7 +260,7 @@ async function cicloMonitor() {
       try {
         await cicloMonitor();
       } catch (err) {
-        // Pega erros fatais (ex: falha ao autenticar, falha na API do Google)
+        // Pega erros fatais (ex: falha ao autenticar)
         console.error('[Monitor] Erro fatal no ciclo:', err.message);
       } finally {
         // AGENDA O PRÓXIMO CICLO APÓS o término do atual
