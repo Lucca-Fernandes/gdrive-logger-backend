@@ -19,7 +19,7 @@ import {
 import { ptBR } from 'date-fns/locale';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 
-// Interfaces
+// --- Interfaces ---
 interface Editor {
   documentId: string;
   documentName: string;
@@ -29,75 +29,94 @@ interface Editor {
   totalMinutes: number;
   lastEdit: string | null; 
 }
-// ==========================================================
-// NOVA INTERFACE PARA OS EIXOS
-// ==========================================================
 interface EixoSummary {
   eixo: string;
   totalMinutes: number;
 }
-
+interface EditorRanking {
+  editorName: string;
+  total: number;
+}
+interface StatsSummary {
+  totalMinutes: number;
+  totalEditors: number;
+  totalDocs: number;
+}
 type DatePreset = 'hoje' | 'semana' | 'mes' | 'custom';
+// --- Fim Interfaces ---
 
 export default function Dashboard() {
+  // Estado para os cartões paginados
   const [data, setData] = useState<Editor[]>([]);
-  // ==========================================================
-  // NOVO ESTADO PARA OS EIXOS
-  // ==========================================================
-  const [eixosData, setEixosData] = useState<EixoSummary[]>([]);
   
+  // Estados para os Gráficos e Estatísticas (Dados de todo o período)
+  const [eixosData, setEixosData] = useState<EixoSummary[]>([]); 
+  const [editorPieData, setEditorPieData] = useState<EditorRanking[]>([]);
+  const [statsData, setStatsData] = useState<StatsSummary>({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
+
+  // Estados de controlo
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [startDate, setStartDate] = useState<Date | null>(startOfDay(new Date()));
   const [endDate, setEndDate] = useState<Date | null>(endOfDay(new Date()));
   const [datePreset, setDatePreset] = useState<DatePreset>('hoje');
+  
+  // Estados de Paginação
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [limit] = useState(9); 
+  const [limit] = useState(9); // 9 cartões por página
 
   const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
-  // ==========================================================
-  // FETCHDATA MODIFICADO
-  // Busca dados dos cards e dados dos eixos em paralelo
-  // ==========================================================
+  /**
+   * Busca todos os dados necessários para o dashboard em paralelo.
+   */
   const fetchData = async (currentPage = 1) => {
     if (!startDate || !endDate) {
-      setData([]);
-      setEixosData([]); // Limpa dados dos eixos
-      setTotalCount(0);
-      setLoading(false);
+      setData([]); setEixosData([]); setEditorPieData([]);
+      setStatsData({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
+      setTotalCount(0); setLoading(false);
       return;
     }
     
     setError(false);
     setLoading(true);
     try {
-      // Parâmetros para ambas as requisições
-      const params = {
+      // Parâmetros de data para todas as requisições
+      const dateParams = {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
       };
-
-      // Parâmetros para a paginação (apenas para /data)
+      
+      // Parâmetros de paginação (só para /data)
       const dataParams = {
-        ...params,
+        ...dateParams,
         page: currentPage,
         limit: limit,
       };
 
-      // Busca os dois endpoints em paralelo
-      const [dataRes, eixosRes] = await Promise.all([
-        axios.get(`${API_URL}/data`, { params: dataParams }),
-        axios.get(`${API_URL}/eixos-summary`, { params })
+      // Busca tudo em paralelo
+      const [dataRes, statsRes, rankingRes, eixosRes] = await Promise.all([
+        axios.get(`${API_URL}/data`, { params: dataParams }),           // 1. Cartões (paginado)
+        axios.get(`${API_URL}/stats-summary`, { params: dateParams }),  // 2. Cartões de Estatística (total)
+        axios.get(`${API_URL}/ranking`, { params: dateParams }),         // 3. Gráfico de Editor (total)
+        axios.get(`${API_URL}/eixos-summary`, { params: dateParams })   // 4. Gráfico de Eixos (total)
       ]);
 
+      // 1. Dados dos Cartões (Paginados)
       setData(dataRes.data.data);
       setTotalCount(dataRes.data.total); 
       setPage(currentPage); 
       
-      setEixosData(eixosRes.data); // <-- SALVA OS DADOS DOS EIXOS
+      // 2. Dados das Estatísticas (Totais)
+      setStatsData(statsRes.data);
+
+      // 3. Dados do Gráfico de Editor (Totais)
+      setEditorPieData(rankingRes.data);
+
+      // 4. Dados do Gráfico de Eixos (Totais)
+      setEixosData(eixosRes.data); 
 
     } catch (err) {
       console.error(err);
@@ -107,21 +126,42 @@ export default function Dashboard() {
     }
   };
 
-  const exportCSV = async () => { /* ... (seu código de exportação) ... */ };
+  const exportCSV = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/export`, {
+        responseType: 'blob',
+        params: { 
+          editor: search || undefined,
+          startDate: startDate ? startDate.toISOString() : undefined,
+          endDate: endDate ? endDate.toISOString() : undefined,
+         },
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `relatorio_eventos_${new Date().toISOString().split('T')[0]}.csv`);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
+  // Efeito que busca dados quando as datas ou a página mudam
   useEffect(() => {
     fetchData(page);
-  }, [startDate, endDate, page]); 
+  }, [startDate, endDate, page]); // Depende da página e das datas
 
-  // Handlers de data (handleDatePresetChange, handleManualDateChange)
-  // ... (Nenhuma mudança necessária aqui) ...
+  // Efeito para os botões de filtro rápido
   const handleDatePresetChange = (
-    _event: React.MouseEvent<HTMLElement>,
+    _event: React.MouseEvent<HTMLElement>, // Corrigido (variável não usada)
     newPreset: DatePreset | null,
   ) => {
     if (newPreset === null) return; 
+
     setDatePreset(newPreset);
-    setPage(1); 
+    setPage(1); // Reseta a página ao mudar o filtro
+
     if (newPreset === 'hoje') {
       setStartDate(startOfDay(new Date()));
       setEndDate(endOfDay(new Date()));
@@ -132,9 +172,12 @@ export default function Dashboard() {
       setStartDate(startOfMonth(new Date()));
       setEndDate(endOfMonth(new Date()));
     }
+    // Se for 'custom', não faz nada, deixa os DatePickers manuais
   };
+  
+  // Handler para os DatePickers manuais
   const handleManualDateChange = (isStart: boolean, newValue: Date | null) => {
-    setDatePreset('custom'); 
+    setDatePreset('custom'); // Muda para o modo "custom"
     setPage(1);
     if (isStart) {
       setStartDate(newValue ? startOfDay(newValue) : null);
@@ -143,13 +186,13 @@ export default function Dashboard() {
     }
   };
 
-
-  const formatDate = (dateStr: string | null) => { /* ... (sem mudanças) ... */ 
+  const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Data inválida';
     const date = new Date(dateStr);
     return isValid(date) ? format(date, "dd 'de' MMM 'às' HH:mm", { locale: ptBR }) : 'Data inválida';
   };
   
+  // O filtro de busca agora só afeta os cartões (data)
   const filteredData = useMemo(() => {
     if (!search) return data;
     return data.filter(
@@ -206,27 +249,30 @@ export default function Dashboard() {
         {/* --- FILTROS MANUAIS E BUSCA --- */}
         <Box p={3} pt={0}>
           <Grid container spacing={2} alignItems="center">
+            {/* Filtro de Data Início */}
             <Grid xs={12} sm={6} md={3}>
               <DatePicker
                 label="Data Início"
                 value={startDate}
                 onChange={(newValue) => handleManualDateChange(true, newValue)}
                 slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
-                disabled={datePreset !== 'custom'}
+                disabled={datePreset !== 'custom'} // Desabilita se não for custom
               />
             </Grid>
+            {/* Filtro de Data Fim */}
             <Grid xs={12} sm={6} md={3}>
               <DatePicker
                 label="Data Fim"
                 value={endDate}
                 onChange={(newValue) => handleManualDateChange(false, newValue)}
                 slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
-                disabled={datePreset !== 'custom'}
+                disabled={datePreset !== 'custom'} // Desabilita se não for custom
               />
             </Grid>
+            {/* Botão de BUSCAR / REFRESH */}
             <Grid xs={12} sm={6} md={2}>
                 <Button 
-                  onClick={() => fetchData(1)}
+                  onClick={() => fetchData(1)} // Sempre busca a página 1
                   variant="contained" 
                   fullWidth 
                   startIcon={<Refresh />}
@@ -235,6 +281,7 @@ export default function Dashboard() {
                   Buscar
                 </Button>
             </Grid>
+            {/* Campo de Busca (Search) */}
             <Grid xs={12} sm={6} md={4}>
               <TextField
                 fullWidth
@@ -250,23 +297,24 @@ export default function Dashboard() {
           </Grid>
         </Box>
         
-        {/* ========================================================== */}
-        {/* GRÁFICOS DE GESTÃO - CORREÇÃO (linha 246) */}
-        {/* Agora passa a prop 'eixosData' que estava faltando */}
-        {/* ========================================================== */}
-        {!loading && (filteredData.length > 0 || eixosData.length > 0) && (
-          <StatsCharts data={filteredData} eixosData={eixosData} />
+      
+        {!loading && (
+          <StatsCharts 
+            statsData={statsData} 
+            editorPieData={editorPieData} 
+            eixosData={eixosData} 
+          />
         )}
 
         {/* --- CONTENT (Cards) --- */}
         <Box p={3} pt={0} mt={6}>
           {error && ( 
-            <Alert severity="error" sx={{ mb: 3 }}>
+             <Alert severity="error" sx={{ mb: 3 }}>
               Erro ao carregar dados. Verifique a conexão.
             </Alert>
           )}
           {loading ? (
-            /* ... (Esqueleto de loading) ... */
+            /* Esqueleto de loading */
             <Grid container spacing={3}>
               {[...Array(limit)].map((_, i) => (
                 <Grid xs={12} sm={6} lg={4} key={i}>
@@ -349,7 +397,7 @@ export default function Dashboard() {
               <Pagination 
                 count={pageCount}
                 page={page}
-                onChange={(_event, value) => setPage(value)}
+                onChange={(_event, value) => setPage(value)} // Corrigido (variável não usada)
                 color="primary"
               />
             </Box>

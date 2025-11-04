@@ -129,9 +129,7 @@ router.get('/ranking', async (req, res) => {
   res.json(result.rows);
 });
 
-// ==========================================================
-// ROTA CORRIGIDA: /api/eixos-summary
-// ==========================================================
+
 router.get('/eixos-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
 
@@ -153,8 +151,7 @@ router.get('/eixos-summary', async (req, res) => {
 
   const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-  // CORREÇÃO: Alterado de LIKE '/01...%' para LIKE '%01...%'
-  // para encontrar o nome do eixo em qualquer parte do caminho.
+  
   const query = `
     SELECT 
       CASE
@@ -186,7 +183,55 @@ router.get('/eixos-summary', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// ==========================================================
+
+router.get('/stats-summary', async (req, res) => {
+  const { startDate, endDate } = req.query;
+
+  let values = [];
+  let whereClauses = [];
+  let idx = 1;
+
+  if (startDate) {
+    whereClauses.push(`"event_time" >= $${idx}`);
+    values.push(startDate); idx++;
+  }
+  if (endDate) {
+    whereClauses.push(`"event_time" <= $${idx}`);
+    values.push(endDate); idx++;
+  }
+  if (!startDate || !endDate) {
+    // Retorna zero se não houver datas
+    return res.json({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
+  }
+
+  const whereString = `WHERE ${whereClauses.join(' AND ')}`;
+
+  // Consulta para agregar os 3 valores de uma só vez
+  const query = `
+    SELECT 
+      SUM(minutes_added) as "totalMinutes",
+      COUNT(DISTINCT editor_name) as "totalEditors",
+      COUNT(DISTINCT document_id) as "totalDocs"
+    FROM 
+      time_logs
+    ${whereString};
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    const stats = result.rows[0];
+    
+    res.json({
+      // Garante que são números e não nulos
+      totalMinutes: Number(stats.totalMinutes) || 0,
+      totalEditors: Number(stats.totalEditors) || 0,
+      totalDocs: Number(stats.totalDocs) || 0
+    });
+  } catch (err) {
+    console.error('Erro na rota /stats-summary:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ROTA DE EXPORTAÇÃO (CSV)
 router.get('/export', async (req, res) => {

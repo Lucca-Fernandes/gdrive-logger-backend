@@ -1,5 +1,5 @@
 // src/components/StatsCharts.tsx
-import { useMemo } from 'react';
+import { useMemo } from 'react'; // <-- 1. IMPORTE useMemo
 import {
   PieChart, Pie, Cell,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -8,20 +8,27 @@ import { Card, CardContent, Typography, Box } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
 import { AccessTime, Person, InsertDriveFile } from '@mui/icons-material';
 
-// Interfaces
-interface EditorData {
-  editorName: string;
-  totalMinutes: number;
-  documentName: string;
-}
+// --- Interfaces ---
 interface EixoData {
   eixo: string;
   totalMinutes: number;
 }
-interface StatsChartsProps {
-  data: EditorData[];
-  eixosData: EixoData[]; // <-- NOVA PROP
+interface EditorRanking {
+  editorName: string; // Vem como 'editorName' do backend (/ranking)
+  total: number;      // Vem como 'total' do backend (/ranking)
 }
+interface StatsData {
+  totalMinutes: number;
+  totalEditors: number;
+  totalDocs: number;
+}
+// Define as props que o componente espera
+interface StatsChartsProps {
+  statsData: StatsData;
+  editorPieData: EditorRanking[];
+  eixosData: EixoData[]; 
+}
+// --- Fim Interfaces ---
 
 const COLORS = ['#1976d2', '#9c27b0', '#ff9800', '#4caf50', '#f44336', '#00bcd4'];
 
@@ -33,38 +40,35 @@ const formatEixoName = (name: string) => {
   return name;
 };
 
-export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
-  // MÉTRICAS (calculadas a partir dos dados dos cards)
-  const totalMinutes = data.reduce((sum, item) => sum + Number(item.totalMinutes), 0);
-  const totalEditors = new Set(data.map(d => d.editorName)).size;
-  const totalDocs = new Set(data.map(d => d.documentName)).size;
+// Label personalizado para o Gráfico de Pizza
+const renderCustomLabel = (props: any) => {
+  const { name, percent } = props; // Esta função espera 'name'
+  if (percent < 0.05) return null; 
+  return `${name}: ${(percent * 100).toFixed(0)}%`;
+};
 
-  // GRÁFICO DE PIZZA: TEMPO POR EDITOR (Nenhuma mudança aqui)
-  const pieData = useMemo(() => {
-    const map = new Map<string, number>();
-    data.forEach(item => {
-      map.set(item.editorName, (map.get(item.editorName) || 0) + Number(item.totalMinutes));
-    });
-    return Array.from(map.entries())
-      .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))
-      .sort((a, b) => b.value - a.value);
-  }, [data]);
+export default function StatsCharts({ statsData, editorPieData, eixosData }: StatsChartsProps) {
 
-  // LABEL PERSONALIZADO (Nenhuma mudança aqui)
-  const renderCustomLabel = (props: any) => {
-    const { name, percent } = props;
-    if (percent < 0.05) return null; 
-    return `${name}: ${(percent * 100).toFixed(0)}%`;
-  };
+  // ==========================================================
+  // 2. CRIE A VARIÁVEL TRANSFORMADA
+  // Converte { editorName, total } para { name, value }
+  // ==========================================================
+  const pieChartData = useMemo(() => {
+    return editorPieData.map(item => ({
+      name: item.editorName,       // Converte 'editorName' para 'name'
+      value: Number(item.total)  // Converte 'total' para 'value'
+    }));
+  }, [editorPieData]);
+  // ==========================================================
 
   return (
     <Box mt={4} px={3}> 
       <Typography variant="h6" fontWeight="bold" mb={3} align="center" color="primary">
-        Monitoramento de Produtividade
+        Estatísticas do Período
       </Typography>
 
       <Grid container spacing={3}>
-        {/* MÉTRICAS RÁPIDAS (Nenhuma mudança aqui) */}
+        {/* MÉTRICAS RÁPIDAS (Usando a prop 'statsData') */}
         <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#e3f2fd', height: '100%' }}>
             <CardContent>
@@ -72,7 +76,7 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
                 <AccessTime color="primary" />
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {totalMinutes.toFixed(1)}
+                    {statsData.totalMinutes.toFixed(1)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Minutos no período
@@ -89,7 +93,7 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
                 <Person color="secondary" />
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {totalEditors}
+                    {statsData.totalEditors}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Editores no período
@@ -106,7 +110,7 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
                 <InsertDriveFile color="warning" />
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {totalDocs}
+                    {statsData.totalDocs}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Documentos no período
@@ -117,7 +121,9 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        {/* GRÁFICO DE PIZZA (Nenhuma mudança aqui) */}
+        {/* ========================================================== */}
+        {/* GRÁFICO DE PIZZA (Atualizado para usar os dados transformados) */}
+        {/* ========================================================== */}
         <Grid xs={12} md={6}>
           <Card>
             <CardContent>
@@ -127,20 +133,21 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
               <ResponsiveContainer width="100%" height={380}>
                 <PieChart>
                   <Pie
-                    data={pieData}
+                    data={pieChartData} // <-- 3. USA A NOVA VARIÁVEL
                     cx="50%"
                     cy="50%"
                     labelLine={false}
                     label={renderCustomLabel}
                     outerRadius={120}
                     fill="#8884d8"
-                    dataKey="value"
+                    dataKey="value" // <-- 4. USA A CHAVE PADRÃO 'value'
+                    nameKey="name"  // <-- 5. USA A CHAVE PADRÃO 'name'
                   >
-                    {pieData.map((_, index) => (
+                    {pieChartData.map((_, index) => ( // <-- 6. USA A NOVA VARIÁVEL
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `${value} min`} />
+                  <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)} min`} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -148,9 +155,7 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        {/* ========================================================== */}
-        {/* NOVO GRÁFICO: TEMPO POR EIXO */}
-        {/* ========================================================== */}
+        {/* GRÁFICO DE EIXOS (Usando a prop 'eixosData') */}
         <Grid xs={12} md={6}>
           <Card>
             <CardContent>
@@ -164,10 +169,10 @@ export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
                   <YAxis 
                     dataKey="eixo" 
                     type="category" 
-                    width={150} // Aumenta o espaço para o label
+                    width={150} 
                     tickFormatter={formatEixoName}
                   />
-                  <Tooltip formatter={(value: number) => `${value.toFixed(1)} min`} />
+                  <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)} min`} />
                   <Legend />
                   <Bar dataKey="totalMinutes" name="Minutos" fill="#1976d2" />
                 </BarChart>
