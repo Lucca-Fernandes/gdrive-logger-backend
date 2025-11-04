@@ -80,7 +80,7 @@ router.get('/data', async (req, res) => {
 
     const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, values),
-      pool.query(countQuery, values.slice(0, -2)) // Remove 'limit' e 'offset'
+      pool.query(countQuery, values.slice(0, -2)) 
     ]);
 
     res.json({
@@ -130,7 +130,7 @@ router.get('/ranking', async (req, res) => {
 });
 
 // ==========================================================
-// NOVA ROTA: /api/eixos-summary
+// ROTA CORRIGIDA: /api/eixos-summary
 // ==========================================================
 router.get('/eixos-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
@@ -148,19 +148,20 @@ router.get('/eixos-summary', async (req, res) => {
     values.push(endDate); idx++;
   }
   if (!startDate || !endDate) {
-    return res.json([]); // Retorna vazio se não houver datas
+    return res.json([]); 
   }
 
   const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-  // Agrupa usando CASE para categorizar o 'folder_path'
+  // CORREÇÃO: Alterado de LIKE '/01...%' para LIKE '%01...%'
+  // para encontrar o nome do eixo em qualquer parte do caminho.
   const query = `
     SELECT 
       CASE
-        WHEN "folder_path" LIKE '/01. Gestão & Negócios%' THEN 'Gestão & Negócios'
-        WHEN "folder_path" LIKE '/02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
-        WHEN "folder_path" LIKE '/03. Informação & Comunicação%' THEN 'Informação & Comunicação'
-        WHEN "folder_path" LIKE '/04. Mundo do Trabalho%' THEN 'Mundo do Trabalho'
+        WHEN "folder_path" LIKE '%01. Gestão & Negócios%' THEN 'Gestão & Negócios'
+        WHEN "folder_path" LIKE '%02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
+        WHEN "folder_path" LIKE '%03. Informação & Comunicação%' THEN 'Informação & Comunicação'
+        WHEN "folder_path" LIKE '%04. Mundo do Trabalho%' THEN 'Mundo do Trabalho'
         ELSE 'Outros'
       END as eixo,
       SUM(minutes_added) as "totalMinutes"
@@ -175,10 +176,9 @@ router.get('/eixos-summary', async (req, res) => {
 
   try {
     const result = await pool.query(query, values);
-    // Converte para número para evitar o bug do .toFixed() no frontend
     const data = result.rows.map(row => ({
       eixo: row.eixo,
-      totalMinutes: Number(row.totalMinutes)
+      totalMinutes: Number(row.totalMinutes) // Garante que é um número
     }));
     res.json(data);
   } catch (err) {

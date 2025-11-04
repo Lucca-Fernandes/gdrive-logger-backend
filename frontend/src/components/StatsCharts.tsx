@@ -1,74 +1,70 @@
+// src/components/StatsCharts.tsx
 import { useMemo } from 'react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,} from 'recharts';
+import {
+  PieChart, Pie, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
 import { Card, CardContent, Typography, Box } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
 import { AccessTime, Person, InsertDriveFile } from '@mui/icons-material';
 
-interface Editor {
+// Interfaces
+interface EditorData {
   editorName: string;
   totalMinutes: number;
   documentName: string;
 }
-
+interface EixoData {
+  eixo: string;
+  totalMinutes: number;
+}
 interface StatsChartsProps {
-  data: Editor[];
+  data: EditorData[];
+  eixosData: EixoData[]; // <-- NOVA PROP
 }
 
 const COLORS = ['#1976d2', '#9c27b0', '#ff9800', '#4caf50', '#f44336', '#00bcd4'];
 
-export default function StatsCharts({ data }: StatsChartsProps) {
-  // MÉTRICAS
-  // const totalMinutes = data.reduce((sum, item) => sum + item.totalMinutes, 0); // <-- LINHA COM ERRO
-  const totalMinutes = data.reduce((sum, item) => sum + Number(item.totalMinutes), 0); // <-- CORREÇÃO
-  
+// Função para encurtar nomes de eixos no gráfico
+const formatEixoName = (name: string) => {
+  if (name.length > 20) {
+    return name.substring(0, 17) + '...';
+  }
+  return name;
+};
+
+export default function StatsCharts({ data, eixosData }: StatsChartsProps) {
+  // MÉTRICAS (calculadas a partir dos dados dos cards)
+  const totalMinutes = data.reduce((sum, item) => sum + Number(item.totalMinutes), 0);
   const totalEditors = new Set(data.map(d => d.editorName)).size;
   const totalDocs = new Set(data.map(d => d.documentName)).size;
 
-  // GRÁFICO DE PIZZA: TEMPO POR EDITOR
+  // GRÁFICO DE PIZZA: TEMPO POR EDITOR (Nenhuma mudança aqui)
   const pieData = useMemo(() => {
     const map = new Map<string, number>();
     data.forEach(item => {
-      // map.set(item.editorName, (map.get(item.editorName) || 0) + item.totalMinutes); // <-- LINHA COM ERRO
-      map.set(item.editorName, (map.get(item.editorName) || 0) + Number(item.totalMinutes)); // <-- CORREÇÃO
+      map.set(item.editorName, (map.get(item.editorName) || 0) + Number(item.totalMinutes));
     });
     return Array.from(map.entries())
       .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))
       .sort((a, b) => b.value - a.value);
   }, [data]);
 
-  // GRÁFICO DE BARRAS: EDIÇÕES POR DOCUMENTO (TOP 6)
-  const barData = useMemo(() => {
-    const map = new Map<string, number>();
-    data.forEach(item => {
-      map.set(item.documentName, (map.get(item.documentName) || 0) + 1);
-    });
-    return Array.from(map.entries())
-      .map(([name, count]) => ({
-        name: name.length > 20 ? name.substring(0, 17) + '...' : name,
-        count,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
-  }, [data]);
-
-  // LABEL PERSONALIZADO COM TIPAGEM CORRETA
+  // LABEL PERSONALIZADO (Nenhuma mudança aqui)
   const renderCustomLabel = (props: any) => {
     const { name, percent } = props;
-    if (percent < 0.05) return null; // Oculta rótulos pequenos
+    if (percent < 0.05) return null; 
     return `${name}: ${(percent * 100).toFixed(0)}%`;
   };
 
   return (
-    // ==========================================================
-    // ALTERAÇÃO AQUI
-    // ==========================================================
     <Box mt={4} px={3}> 
       <Typography variant="h6" fontWeight="bold" mb={3} align="center" color="primary">
         Monitoramento de Produtividade
       </Typography>
 
       <Grid container spacing={3}>
-        {/* MÉTRICAS RÁPIDAS */}
+        {/* MÉTRICAS RÁPIDAS (Nenhuma mudança aqui) */}
         <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#e3f2fd', height: '100%' }}>
             <CardContent>
@@ -79,14 +75,13 @@ export default function StatsCharts({ data }: StatsChartsProps) {
                     {totalMinutes.toFixed(1)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Minutos totais
+                    Minutos no período
                   </Typography>
                 </Box>
               </Box>
             </CardContent>
           </Card>
         </Grid>
-
         <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#f3e5f5', height: '100%' }}>
             <CardContent>
@@ -97,14 +92,13 @@ export default function StatsCharts({ data }: StatsChartsProps) {
                     {totalEditors}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Editores
+                    Editores no período
                   </Typography>
                 </Box>
               </Box>
             </CardContent>
           </Card>
         </Grid>
-
         <Grid xs={12} sm={6} md={4}>
           <Card sx={{ bgcolor: '#fff3e0', height: '100%' }}>
             <CardContent>
@@ -115,7 +109,7 @@ export default function StatsCharts({ data }: StatsChartsProps) {
                     {totalDocs}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Documentos
+                    Documentos no período
                   </Typography>
                 </Box>
               </Box>
@@ -123,14 +117,14 @@ export default function StatsCharts({ data }: StatsChartsProps) {
           </Card>
         </Grid>
 
-        {/* GRÁFICO DE PIZZA */}
+        {/* GRÁFICO DE PIZZA (Nenhuma mudança aqui) */}
         <Grid xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography variant="subtitle1" fontWeight="bold" mb={2}>
                 Tempo por Editor
               </Typography>
-              <ResponsiveContainer width="100%" height={400}>
+              <ResponsiveContainer width="100%" height={380}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -147,26 +141,35 @@ export default function StatsCharts({ data }: StatsChartsProps) {
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => `${value} min`} />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* GRÁFICO DE BARRAS */}
+        {/* ========================================================== */}
+        {/* NOVO GRÁFICO: TEMPO POR EIXO */}
+        {/* ========================================================== */}
         <Grid xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography variant="subtitle1" fontWeight="bold" mb={2}>
-                Documentos Mais Editados
+                Tempo por Eixo
               </Typography>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={barData}>
+              <ResponsiveContainer width="100%" height={380}>
+                <BarChart data={eixosData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#1976d2" />
+                  <XAxis type="number" />
+                  <YAxis 
+                    dataKey="eixo" 
+                    type="category" 
+                    width={150} // Aumenta o espaço para o label
+                    tickFormatter={formatEixoName}
+                  />
+                  <Tooltip formatter={(value: number) => `${value.toFixed(1)} min`} />
+                  <Legend />
+                  <Bar dataKey="totalMinutes" name="Minutos" fill="#1976d2" />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
