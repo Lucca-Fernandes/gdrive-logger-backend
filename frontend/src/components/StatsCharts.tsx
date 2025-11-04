@@ -18,7 +18,9 @@ const COLORS = ['#1976d2', '#9c27b0', '#ff9800', '#4caf50', '#f44336', '#00bcd4'
 
 export default function StatsCharts({ data }: StatsChartsProps) {
   // MÉTRICAS
-  const totalMinutes = data.reduce((sum, item) => sum + item.totalMinutes, 0);
+  // const totalMinutes = data.reduce((sum, item) => sum + item.totalMinutes, 0); // <-- LINHA COM ERRO
+  const totalMinutes = data.reduce((sum, item) => sum + Number(item.totalMinutes), 0); // <-- CORREÇÃO
+  
   const totalEditors = new Set(data.map(d => d.editorName)).size;
   const totalDocs = new Set(data.map(d => d.documentName)).size;
 
@@ -26,7 +28,8 @@ export default function StatsCharts({ data }: StatsChartsProps) {
   const pieData = useMemo(() => {
     const map = new Map<string, number>();
     data.forEach(item => {
-      map.set(item.editorName, (map.get(item.editorName) || 0) + item.totalMinutes);
+      // map.set(item.editorName, (map.get(item.editorName) || 0) + item.totalMinutes); // <-- LINHA COM ERRO
+      map.set(item.editorName, (map.get(item.editorName) || 0) + Number(item.totalMinutes)); // <-- CORREÇÃO
     });
     return Array.from(map.entries())
       .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))

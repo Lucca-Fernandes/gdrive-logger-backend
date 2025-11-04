@@ -1,11 +1,18 @@
+// src/pages/Dashboard.tsx
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import StatsCharts from '../components/StatsCharts';
-import {Container, Paper, Typography, Box, TextField, InputAdornment, Button, Card, CardContent, CardActions, Chip, Avatar, Tooltip, IconButton, Skeleton, Alert,} from '@mui/material';
-import Grid from '@mui/material/Unstable_Grid2'; 
+import {
+  Container, Paper, Typography, Box, TextField, InputAdornment,
+  Button, Card, CardContent, CardActions, Chip, Avatar,
+  Skeleton, Alert,
+} from '@mui/material';
+import Grid from '@mui/material/Unstable_Grid2';
 import { Search, Download, Refresh, AccessTime, Person, Folder, Link as LinkIcon } from '@mui/icons-material';
-import { format, isValid } from 'date-fns';
+// Imports de Data
+import { format, isValid, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'; // <-- NOVO
 
 interface Editor {
   documentId: string;
@@ -14,7 +21,7 @@ interface Editor {
   folderPath: string;
   editorName: string;
   totalMinutes: number;
-  lastEdit: string | null; 
+  lastEdit: string | null;
 }
 
 export default function Dashboard() {
@@ -23,14 +30,29 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+
+  const [startDate, setStartDate] = useState<Date | null>(startOfDay(new Date()));
+  const [endDate, setEndDate] = useState<Date | null>(endOfDay(new Date()));
+  // ==========================================================
+
   const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
   const fetchData = async () => {
+    if (!startDate || !endDate) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
     setError(false);
+    setLoading(true); 
     try {
-      const res = await axios.get(`${API_URL}/data`, {
-        params: { limit: 100 },
-      });
+      const params: any = {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      };
+
+      const res = await axios.get(`${API_URL}/data`, { params });
       setData(res.data.data);
     } catch (err) {
       console.error(err);
@@ -44,7 +66,11 @@ export default function Dashboard() {
     try {
       const res = await axios.get(`${API_URL}/export`, {
         responseType: 'blob',
-        params: { editor: search || undefined },
+        params: {
+          editor: search || undefined,
+          startDate: startDate ? startDate.toISOString() : undefined,
+          endDate: endDate ? endDate.toISOString() : undefined,
+        },
       });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
@@ -57,13 +83,16 @@ export default function Dashboard() {
     }
   };
 
+
   useEffect(() => {
+    
     fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  }, []); 
+
+ 
 
   const filteredData = useMemo(() => {
+    
     if (!search) return data;
     return data.filter(
       (item) =>
@@ -78,53 +107,89 @@ export default function Dashboard() {
     return isValid(date) ? format(date, "dd 'de' MMM 'às' HH:mm", { locale: ptBR }) : 'Data inválida';
   };
 
-  return (
-    <Container maxWidth="xl" sx={{ py: 2, mt: -8}}>
+  
+  const handleClearDates = () => {
+    setStartDate(null);
+    setEndDate(null);
+  };
 
-      
-      <Box 
-        display="flex" 
-        justifyContent="center" 
-        mb={0} // Adiciona uma margem abaixo do logo
-      >
-        <img 
-          src="../../public/logo_NIC-PNG.png" // <-- MUDE ESTE CAMINHO
-          alt="Logo da Empresa" 
-          height={400} width={600} // Ajuste a altura conforme necessário
-        />
+  const handleFilter = () => {
+    fetchData();
+  };
+
+  return (
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* --- LOGO --- */}
+      <Box display="flex" justifyContent="center" mb={0}>
+        <img src="../../public/logo_NIC-PNG.png" alt="Logo da Empresa" height={350} width={500} />
       </Box>
-      
 
       <Paper elevation={6} sx={{ borderRadius: 3, overflow: 'hidden', mt: -8 }}>
-        {/* HEADER */}
+        {/* --- HEADER --- */}
         <Box p={4} bgcolor="primary.main" color="white">
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h4" fontWeight="bold">
               Monitor de Edição
             </Typography>
             <Box display="flex" gap={1}>
-              <Tooltip title="Atualizar">
-                <IconButton onClick={fetchData} color="inherit">
-                  <Refresh />
-                </IconButton>
-              </Tooltip>
               <Button
                 variant="contained"
                 color="secondary"
                 startIcon={<Download />}
                 onClick={exportCSV}
               >
-                CSV
+                Exportar CSV
               </Button>
             </Box>
           </Box>
         </Box>
 
-        {/* SEARCH */}
         <Box p={3} pb={2}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid xs={12} md={3}>
+              <DatePicker
+                label="Data Início"
+                value={startDate}
+                onChange={(newValue) => setStartDate(newValue ? startOfDay(newValue) : null)}
+                slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
+              />
+            </Grid>
+            <Grid xs={12} md={3}>
+              <DatePicker
+                label="Data Fim"
+                value={endDate}
+                onChange={(newValue) => setEndDate(newValue ? endOfDay(newValue) : null)}
+                slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
+              />
+            </Grid>
+            <Grid xs={12} md={2}>
+              <Button
+                onClick={handleClearDates}
+                variant="outlined"
+                fullWidth
+                sx={{ height: '56px' }}
+              >
+                Limpar Datas
+              </Button>
+            </Grid>
+            <Grid xs={12} md={4}>
+              <Button
+                onClick={handleFilter}
+                variant="contained"
+                fullWidth
+                startIcon={<Refresh />}
+                sx={{ height: '56px' }}
+              >
+                Buscar Período
+              </Button>
+            </Grid>
+          </Grid>
+        </Box>
+
+        <Box p={3} pt={0}>
           <TextField
             fullWidth
-            placeholder="Buscar por editor ou documento..."
+            placeholder="Filtrar resultado atual por editor ou documento..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             InputProps={{
@@ -137,41 +202,35 @@ export default function Dashboard() {
             variant="outlined"
           />
         </Box>
-        {/* GRÁFICOS DE GESTÃO */}
+        
         {!loading && filteredData.length > 0 && (
           <StatsCharts data={filteredData} />
         )}
-        {/* CONTENT */}
+
         <Box p={3} pt={0} mt={6}>
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
-              Erro ao carregar dados. Tentando novamente...
+              Erro ao carregar dados. Verifique a conexão.
             </Alert>
           )}
 
-          {/* LOADING */}
           {loading ? (
+            /* Esqueleto de loading */
             <Grid container spacing={3}>
               {[...Array(6)].map((_, i) => (
                 <Grid xs={12} sm={6} lg={4} key={i}>
-                  <Card>
-                    <CardContent>
-                      <Skeleton height={60} />
-                      <Skeleton />
-                      <Skeleton width="60%" />
-                    </CardContent>
-                  </Card>
+                  <Card><CardContent><Skeleton height={60} /></CardContent></Card>
                 </Grid>
               ))}
             </Grid>
           ) : filteredData.length === 0 ? (
             <Box textAlign="center" py={8}>
               <Typography variant="h6" color="text.secondary">
-                {search ? 'Nenhum resultado encontrado' : 'Nenhum documento editado ainda'}
+                {search ? 'Nenhum resultado para esta busca' : 'Nenhum dado encontrado para este período'}
               </Typography>
             </Box>
           ) : (
-            /* DADOS REAIS */
+            /* DADOS REAIS (filtrados) */
             <Grid container spacing={3}>
               {filteredData.map((item) => (
                 <Grid xs={12} sm={6} lg={4} key={`${item.documentId}-${item.editorName}`}>
@@ -190,36 +249,31 @@ export default function Dashboard() {
                           <Person />
                         </Avatar>
                         <Chip
-                          label={`${item.totalMinutes.toFixed(1)} min`}
+                          label={`${Number(item.totalMinutes).toFixed(1)} min`}
                           size="small"
                           color="primary"
                           icon={<AccessTime />}
                         />
                       </Box>
-
                       <Typography variant="h6" fontWeight="bold" gutterBottom noWrap>
                         {item.documentName}
                       </Typography>
-
                       <Box display="flex" alignItems="center" gap={1} my={1} color="text.secondary">
                         <Folder fontSize="small" />
                         <Typography variant="body2" noWrap>
                           {item.folderPath}
                         </Typography>
                       </Box>
-
                       <Box display="flex" alignItems="center" gap={1} my={1}>
                         <Person fontSize="small" />
                         <Typography variant="body2" fontWeight="medium">
                           {item.editorName}
                         </Typography>
                       </Box>
-
                       <Typography variant="caption" color="text.secondary">
                         {formatDate(item.lastEdit)}
                       </Typography>
                     </CardContent>
-
                     <CardActions>
                       <Button
                         size="small"
@@ -238,6 +292,7 @@ export default function Dashboard() {
             </Grid>
           )}
         </Box>
+
       </Paper>
     </Container>
   );

@@ -73,7 +73,7 @@ export default function LoginPage() {
                             height: 150,
                         }}
                         alt="Logo da Empresa"
-                        src="../../public/logo_NIC-PNG.png" />
+                        src="./logo_NIC-PNG.png" />
 
 
 

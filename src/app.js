@@ -191,10 +191,9 @@ async function cicloMonitor() {
       } catch (err) {
         console.error(`[Monitor] Falha ao processar arquivo ${change.file?.id}:`, err.message);
       }
-    } // Fim do 'for'
+    } 
   }
 
-  // ATUALIZA O TOKEN APÓS PROCESSAR TUDO
   if (newToken && newToken !== pageToken) {
     try {
       await setPageToken(newToken);
@@ -207,7 +206,6 @@ async function cicloMonitor() {
   console.log('[Monitor] === CICLO CONCLUÍDO ===');
 }
 
-// === INICIAR SERVIDOR (Robusto com setTimeout) ===
 (async () => {
   try {
     await authenticate();

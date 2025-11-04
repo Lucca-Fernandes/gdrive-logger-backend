@@ -16,71 +16,83 @@ router.post('/login', (req, res) => {
 });
 
 
-// ROTA DE DADOS (LÓGICA REAL)
+// ROTA DE DADOS 
 router.get('/data', async (req, res) => {
   try {
-    // Paginação removida por enquanto, pois é complexa com 'GROUP BY'
-    const { editor, startDate, endDate } = req.query;
+    const { editor, startDate, endDate, page = 1, limit = 9 } = req.query;
     
     let values = [];
     let whereClauses = [];
     let idx = 1;
 
-    // Filtro de Data Início (Obrigatório)
     if (startDate) {
       whereClauses.push(`"event_time" >= $${idx}`);
-      values.push(startDate); // String ISO
-      idx++;
+      values.push(startDate); idx++;
     }
-    // Filtro de Data Fim (Obrigatório)
     if (endDate) {
       whereClauses.push(`"event_time" <= $${idx}`);
-      values.push(endDate); // String ISO
-      idx++;
+      values.push(endDate); idx++;
     }
-    // Filtro de Editor (Opcional)
     if (editor) {
       whereClauses.push(`"editor_name" ILIKE $${idx}`);
-      values.push(`%${editor}%`);
-      idx++;
+      values.push(`%${editor}%`); idx++;
     }
 
-    // Se não houver filtros de data, retorna vazio (para não sobrecarregar)
     if (!startDate || !endDate) {
       return res.json({ data: [], total: 0, page: 1, limit: 0 });
     }
 
     const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-    // LÓGICA REAL: SOMA os minutos e AGRUPA por documento/editor
-    // Pega o tempo SOMADO, a ÚLTIMA edição e os outros dados.
-    const query = `
-      SELECT 
-        document_id as "documentId",
-        editor_name as "editorName",
-        MAX(document_name) as "documentName", 
-        MAX(document_link) as "documentLink",
-        MAX(folder_path) as "folderPath",
-        SUM(minutes_added) as "totalMinutes",
-        MAX(event_time) as "lastEdit"
-      FROM 
-        time_logs
-      ${whereString}
-      GROUP BY 
-        document_id, editor_name
-      ORDER BY 
-        "totalMinutes" DESC
+    // Consulta principal com Agregação (CTE)
+    const dataQuery = `
+      WITH AggregatedData AS (
+        SELECT 
+          document_id as "documentId",
+          editor_name as "editorName",
+          MAX(document_name) as "documentName", 
+          MAX(document_link) as "documentLink",
+          MAX(folder_path) as "folderPath",
+          SUM(minutes_added) as "totalMinutes",
+          MAX(event_time) as "lastEdit"
+        FROM 
+          time_logs
+        ${whereString}
+        GROUP BY 
+          document_id, editor_name
+      )
+      SELECT * FROM AggregatedData
+      ORDER BY "totalMinutes" DESC
+      LIMIT $${idx} OFFSET $${idx + 1}
+    `;
+    
+    // Consulta de Contagem (CTE)
+    const countQuery = `
+      WITH AggregatedData AS (
+        SELECT 1 FROM time_logs
+        ${whereString}
+        GROUP BY document_id, editor_name
+      )
+      SELECT COUNT(*) FROM AggregatedData
     `;
 
-    const result = await pool.query(query, values);
+    // Adiciona os valores de paginação
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    values.push(parseInt(limit), offset);
 
-    // O 'total' agora é o número de *agrupamentos*
+    // Executa as consultas
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, values),
+      pool.query(countQuery, values.slice(0, -2)) // Remove 'limit' e 'offset' da contagem
+    ]);
+
     res.json({
-      data: result.rows,
-      total: result.rowCount,
-      page: 1, // Paginação está desativada por enquanto
-      limit: result.rowCount
+      data: dataResult.rows,
+      total: parseInt(countResult.rows[0].count),
+      page: parseInt(page),
+      limit: parseInt(limit)
     });
+
   } catch (err) {
     console.error('Erro na rota /data:', err.message);
     res.status(500).json({ error: err.message });
