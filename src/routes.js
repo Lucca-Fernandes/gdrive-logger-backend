@@ -15,8 +15,7 @@ router.post('/login', (req, res) => {
   }
 });
 
-
-// ROTA DE DADOS 
+// ROTA DE DADOS (PARA OS CARDS E PAGINAÇÃO)
 router.get('/data', async (req, res) => {
   try {
     const { editor, startDate, endDate, page = 1, limit = 9 } = req.query;
@@ -44,7 +43,7 @@ router.get('/data', async (req, res) => {
 
     const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-    // Consulta principal com Agregação (CTE)
+    // Consulta de dados com Agregação (CTE)
     const dataQuery = `
       WITH AggregatedData AS (
         SELECT 
@@ -66,7 +65,7 @@ router.get('/data', async (req, res) => {
       LIMIT $${idx} OFFSET $${idx + 1}
     `;
     
-    // Consulta de Contagem (CTE)
+    // Consulta de Contagem
     const countQuery = `
       WITH AggregatedData AS (
         SELECT 1 FROM time_logs
@@ -76,14 +75,12 @@ router.get('/data', async (req, res) => {
       SELECT COUNT(*) FROM AggregatedData
     `;
 
-    // Adiciona os valores de paginação
     const offset = (parseInt(page) - 1) * parseInt(limit);
     values.push(parseInt(limit), offset);
 
-    // Executa as consultas
     const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, values),
-      pool.query(countQuery, values.slice(0, -2)) // Remove 'limit' e 'offset' da contagem
+      pool.query(countQuery, values.slice(0, -2)) // Remove 'limit' e 'offset'
     ]);
 
     res.json({
@@ -99,26 +96,22 @@ router.get('/data', async (req, res) => {
   }
 });
 
-// ROTA DE RANKING (LÓGICA REAL)
+// ROTA DE RANKING (TOP EDITORES)
 router.get('/ranking', async (req, res) => {
-  const { startDate, endDate } = req.query; // Pode filtrar o ranking por data também
-  
+  const { startDate, endDate } = req.query;
   let values = [];
   let whereClauses = [];
   let idx = 1;
 
   if (startDate) {
     whereClauses.push(`"event_time" >= $${idx}`);
-    values.push(startDate);
-    idx++;
+    values.push(startDate); idx++;
   }
   if (endDate) {
     whereClauses.push(`"event_time" <= $${idx}`);
-    values.push(endDate);
-    idx++;
+    values.push(endDate); idx++;
   }
 
-  // Se não houver filtros de data, não retorna nada
   if (!startDate || !endDate) {
     return res.json([]);
   }
@@ -136,8 +129,66 @@ router.get('/ranking', async (req, res) => {
   res.json(result.rows);
 });
 
+// ==========================================================
+// NOVA ROTA: /api/eixos-summary
+// ==========================================================
+router.get('/eixos-summary', async (req, res) => {
+  const { startDate, endDate } = req.query;
 
-// ROTA DE EXPORTAÇÃO (LÓGICA REAL)
+  let values = [];
+  let whereClauses = [];
+  let idx = 1;
+
+  if (startDate) {
+    whereClauses.push(`"event_time" >= $${idx}`);
+    values.push(startDate); idx++;
+  }
+  if (endDate) {
+    whereClauses.push(`"event_time" <= $${idx}`);
+    values.push(endDate); idx++;
+  }
+  if (!startDate || !endDate) {
+    return res.json([]); // Retorna vazio se não houver datas
+  }
+
+  const whereString = `WHERE ${whereClauses.join(' AND ')}`;
+
+  // Agrupa usando CASE para categorizar o 'folder_path'
+  const query = `
+    SELECT 
+      CASE
+        WHEN "folder_path" LIKE '/01. Gestão & Negócios%' THEN 'Gestão & Negócios'
+        WHEN "folder_path" LIKE '/02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
+        WHEN "folder_path" LIKE '/03. Informação & Comunicação%' THEN 'Informação & Comunicação'
+        WHEN "folder_path" LIKE '/04. Mundo do Trabalho%' THEN 'Mundo do Trabalho'
+        ELSE 'Outros'
+      END as eixo,
+      SUM(minutes_added) as "totalMinutes"
+    FROM 
+      time_logs
+    ${whereString}
+    GROUP BY 
+      eixo
+    ORDER BY
+      "totalMinutes" DESC;
+  `;
+
+  try {
+    const result = await pool.query(query, values);
+    // Converte para número para evitar o bug do .toFixed() no frontend
+    const data = result.rows.map(row => ({
+      eixo: row.eixo,
+      totalMinutes: Number(row.totalMinutes)
+    }));
+    res.json(data);
+  } catch (err) {
+    console.error('Erro na rota /eixos-summary:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// ==========================================================
+
+// ROTA DE EXPORTAÇÃO (CSV)
 router.get('/export', async (req, res) => {
   try {
     const { editor, startDate, endDate } = req.query;
@@ -148,23 +199,19 @@ router.get('/export', async (req, res) => {
 
     if (startDate) {
       whereClauses.push(`"event_time" >= $${idx}`);
-      values.push(startDate);
-      idx++;
+      values.push(startDate); idx++;
     }
     if (endDate) {
       whereClauses.push(`"event_time" <= $${idx}`);
-      values.push(endDate);
-      idx++;
+      values.push(endDate); idx++;
     }
     if (editor) {
       whereClauses.push(`"editor_name" ILIKE $${idx}`);
-      values.push(`%${editor}%`);
-      idx++;
+      values.push(`%${editor}%`); idx++;
     }
     
     const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    // Exporta os LOGS (eventos), não os totais agrupados
     const result = await pool.query(`
       SELECT * FROM time_logs 
       ${whereString} 
