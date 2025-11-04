@@ -3,11 +3,8 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('./db.js');
 
-/**
- * Converte a data (armazenada em UTC) para o fuso horário de São Paulo (GMT-3)
- * e formata para o padrão pt-BR.
- * USADO APENAS PARA O CSV (/export).
- */
+
+
 function formatBR(date) {
   if (!date) return '';
   const d = new Date(date);
@@ -21,6 +18,23 @@ function formatBR(date) {
     minute: '2-digit'
   });
 }
+
+router.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  // Puxa as credenciais seguras do .env
+  const adminUser = process.env.ADMIN_USER;
+  const adminPass = process.env.ADMIN_PASS;
+
+  // Verifica se o usuário e senha batem
+  if (username === adminUser && password === adminPass) {
+    // Se bater, envia sucesso.
+    res.json({ success: true });
+  } else {
+    // Se errar, envia 401 (Não Autorizado)
+    res.status(401).json({ success: false, message: 'Credenciais inválidas' });
+  }
+});
 
 // ROTA 1: /api/data
 router.get('/data', async (req, res) => {
@@ -50,10 +64,7 @@ router.get('/data', async (req, res) => {
 
     const result = await pool.query(query, values);
 
-    // ===================================================================
-    // CORREÇÃO: Remover o .map() e enviar 'result.rows' diretamente.
-    // O frontend (Dashboard.tsx) vai formatar a data ISO.
-    // ===================================================================
+    
     res.json({
       data: result.rows,
       total: parseInt(countRes.rows[0].count),
@@ -80,7 +91,6 @@ router.get('/ranking', async (req, res) => {
 
 // ROTA 3: /api/today
 router.get('/today', async (req, res) => {
-  // Converte a data de hoje para o fuso de SP para a query
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); // Formato YYYY-MM-DD
 
   const result = await pool.query(`
@@ -100,13 +110,12 @@ router.get('/export', async (req, res) => {
   
   const csv = [
     'Documento,Editor,Minutos,Última Edição',
-    // Aqui mantemos o formatBR, pois o CSV precisa da data formatada
     ...result.rows.map(r => `"${r.documentName}","${r.editorName}",${r.totalMinutes},"${formatBR(r.lastEdit)}"`)
   ].join('\n');
 
   res.header('Content-Type', 'text/csv; charset=utf-8');
   res.attachment('relatorio.csv');
-  res.send(Buffer.from(csv, 'utf-8')); // Garante encoding correto
+  res.send(Buffer.from(csv, 'utf-8'));    
 });
 
 // ROTA 5: /health

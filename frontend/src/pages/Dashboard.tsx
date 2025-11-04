@@ -1,24 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import StatsCharts from '../components/StatsCharts';
-import {
-  Container,
-  Paper,
-  Typography,
-  Box,
-  TextField,
-  InputAdornment,
-  Button,
-  Card,
-  CardContent,
-  CardActions,
-  Chip,
-  Avatar,
-  Tooltip,
-  IconButton,
-  Skeleton,
-  Alert,
-} from '@mui/material';
+import {Container, Paper, Typography, Box, TextField, InputAdornment, Button, Card, CardContent, CardActions, Chip, Avatar, Tooltip, IconButton, Skeleton, Alert,} from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2'; 
 import { Search, Download, Refresh, AccessTime, Person, Folder, Link as LinkIcon } from '@mui/icons-material';
 import { format, isValid } from 'date-fns';
@@ -89,7 +72,6 @@ export default function Dashboard() {
     );
   }, [data, search]);
 
-  // FUNÇÃO SEGURA PARA FORMATAR DATA
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Data inválida';
     const date = new Date(dateStr);
@@ -255,13 +237,6 @@ export default function Dashboard() {
               ))}
             </Grid>
           )}
-        </Box>
-
-        {/* FOOTER */}
-        <Box p={2} bgcolor="grey.100" textAlign="center">
-          <Typography variant="caption" color="text.secondary">
-            Atualizado em {new Date().toLocaleTimeString('pt-BR')}
-          </Typography>
         </Box>
       </Paper>
     </Container>
