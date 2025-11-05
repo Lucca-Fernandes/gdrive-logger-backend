@@ -206,8 +206,7 @@ export default function Dashboard() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      {/* --- LOGO --- */}
-      <Box display="flex" justifyContent="center" mb={0}>
+      <Box display="flex" justifyContent="center" mb={0} mt={-8}>
         <img src="../../public/logo_NIC-PNG.png" alt="Logo da Empresa" height={350} width={500} />
       </Box>
 
