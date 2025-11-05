@@ -206,9 +206,7 @@ async function cicloMonitor() {
 
   console.log('[Monitor] === CICLO CONCLUÍDO ===');
 }
-// ==========================================================
 
-// === INICIAR SERVIDOR (Sem alterações) ===
 (async () => {
   try {
     await authenticate();
