@@ -15,10 +15,11 @@ router.post('/login', (req, res) => {
   }
 });
 
-// ROTA DE DADOS (PARA OS CARDS E PAGINAÇÃO)
+// ROTA DE DADOS (COM BUSCA E PAGINAÇÃO)
 router.get('/data', async (req, res) => {
   try {
-    const { editor, startDate, endDate, page = 1, limit = 9 } = req.query;
+    // 'editor' foi substituído por 'search'
+    const { search, startDate, endDate, page = 1, limit = 9 } = req.query;
     
     let values = [];
     let whereClauses = [];
@@ -32,9 +33,11 @@ router.get('/data', async (req, res) => {
       whereClauses.push(`"event_time" <= $${idx}`);
       values.push(endDate); idx++;
     }
-    if (editor) {
-      whereClauses.push(`"editor_name" ILIKE $${idx}`);
-      values.push(`%${editor}%`); idx++;
+    if (search) {
+      // Procura no nome do documento OU no nome do editor
+      whereClauses.push(`("document_name" ILIKE $${idx} OR "editor_name" ILIKE $${idx})`);
+      values.push(`%${search}%`); 
+      idx++;
     }
 
     if (!startDate || !endDate) {
@@ -56,7 +59,7 @@ router.get('/data', async (req, res) => {
           MAX(event_time) as "lastEdit"
         FROM 
           time_logs
-        ${whereString}
+        ${whereString} 
         GROUP BY 
           document_id, editor_name
       )
@@ -65,7 +68,7 @@ router.get('/data', async (req, res) => {
       LIMIT $${idx} OFFSET $${idx + 1}
     `;
     
-    // Consulta de Contagem
+    // Consulta de Contagem (com a mesma cláusula WHERE)
     const countQuery = `
       WITH AggregatedData AS (
         SELECT 1 FROM time_logs
@@ -78,9 +81,12 @@ router.get('/data', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     values.push(parseInt(limit), offset);
 
+    // A consulta de contagem deve usar os mesmos valores, exceto paginação
+    const countValues = values.slice(0, -2); 
+
     const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, values),
-      pool.query(countQuery, values.slice(0, -2)) 
+      pool.query(countQuery, countValues)
     ]);
 
     res.json({
@@ -129,7 +135,7 @@ router.get('/ranking', async (req, res) => {
   res.json(result.rows);
 });
 
-
+// ROTA DE SUMÁRIO DOS EIXOS
 router.get('/eixos-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
 
@@ -151,7 +157,7 @@ router.get('/eixos-summary', async (req, res) => {
 
   const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-  
+  // CORREÇÃO: Usa LIKE '%nome-do-eixo%'
   const query = `
     SELECT 
       CASE
@@ -175,7 +181,7 @@ router.get('/eixos-summary', async (req, res) => {
     const result = await pool.query(query, values);
     const data = result.rows.map(row => ({
       eixo: row.eixo,
-      totalMinutes: Number(row.totalMinutes) // Garante que é um número
+      totalMinutes: Number(row.totalMinutes)
     }));
     res.json(data);
   } catch (err) {
@@ -184,6 +190,7 @@ router.get('/eixos-summary', async (req, res) => {
   }
 });
 
+// ROTA DE SUMÁRIO DAS ESTATÍSTICAS
 router.get('/stats-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
 
@@ -200,13 +207,11 @@ router.get('/stats-summary', async (req, res) => {
     values.push(endDate); idx++;
   }
   if (!startDate || !endDate) {
-    // Retorna zero se não houver datas
     return res.json({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
   }
 
   const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-  // Consulta para agregar os 3 valores de uma só vez
   const query = `
     SELECT 
       SUM(minutes_added) as "totalMinutes",
@@ -222,7 +227,6 @@ router.get('/stats-summary', async (req, res) => {
     const stats = result.rows[0];
     
     res.json({
-      // Garante que são números e não nulos
       totalMinutes: Number(stats.totalMinutes) || 0,
       totalEditors: Number(stats.totalEditors) || 0,
       totalDocs: Number(stats.totalDocs) || 0
@@ -233,10 +237,10 @@ router.get('/stats-summary', async (req, res) => {
   }
 });
 
-// ROTA DE EXPORTAÇÃO (CSV)
+// ROTA DE EXPORTAÇÃO (CSV - COM BUSCA)
 router.get('/export', async (req, res) => {
   try {
-    const { editor, startDate, endDate } = req.query;
+    const { search, startDate, endDate } = req.query;
     
     let values = [];
     let whereClauses = [];
@@ -250,9 +254,10 @@ router.get('/export', async (req, res) => {
       whereClauses.push(`"event_time" <= $${idx}`);
       values.push(endDate); idx++;
     }
-    if (editor) {
-      whereClauses.push(`"editor_name" ILIKE $${idx}`);
-      values.push(`%${editor}%`); idx++;
+    if (search) {
+      whereClauses.push(`("document_name" ILIKE $${idx} OR "editor_name" ILIKE $${idx})`);
+      values.push(`%${search}%`); 
+      idx++;
     }
     
     const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';

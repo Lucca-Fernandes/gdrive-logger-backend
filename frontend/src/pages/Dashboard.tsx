@@ -1,5 +1,5 @@
 // src/pages/Dashboard.tsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import StatsCharts from '../components/StatsCharts';
 import {
@@ -49,7 +49,7 @@ export default function Dashboard() {
   // Estado para os cartões paginados
   const [data, setData] = useState<Editor[]>([]);
   
-  // Estados para os Gráficos e Estatísticas (Dados de todo o período)
+  // Estados para os Gráficos e Estatísticas
   const [eixosData, setEixosData] = useState<EixoSummary[]>([]); 
   const [editorPieData, setEditorPieData] = useState<EditorRanking[]>([]);
   const [statsData, setStatsData] = useState<StatsSummary>({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
@@ -65,13 +65,10 @@ export default function Dashboard() {
   // Estados de Paginação
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [limit] = useState(9); // 9 cartões por página
+  const [limit] = useState(9); 
 
   const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
-  /**
-   * Busca todos os dados necessários para o dashboard em paralelo.
-   */
   const fetchData = async (currentPage = 1) => {
     if (!startDate || !endDate) {
       setData([]); setEixosData([]); setEditorPieData([]);
@@ -89,32 +86,31 @@ export default function Dashboard() {
         endDate: endDate.toISOString(),
       };
       
-      // Parâmetros de paginação (só para /data)
+      // Parâmetros de paginação E BUSCA (só para /data)
       const dataParams = {
         ...dateParams,
         page: currentPage,
         limit: limit,
+        search: search || undefined, // <-- 1. ENVIA O TERMO DE BUSCA
       };
 
       // Busca tudo em paralelo
       const [dataRes, statsRes, rankingRes, eixosRes] = await Promise.all([
-        axios.get(`${API_URL}/data`, { params: dataParams }),           // 1. Cartões (paginado)
-        axios.get(`${API_URL}/stats-summary`, { params: dateParams }),  // 2. Cartões de Estatística (total)
-        axios.get(`${API_URL}/ranking`, { params: dateParams }),         // 3. Gráfico de Editor (total)
-        axios.get(`${API_URL}/eixos-summary`, { params: dateParams })   // 4. Gráfico de Eixos (total)
+        axios.get(`${API_URL}/data`, { params: dataParams }),           
+        axios.get(`${API_URL}/stats-summary`, { params: dateParams }),  
+        axios.get(`${API_URL}/ranking`, { params: dateParams }),         
+        axios.get(`${API_URL}/eixos-summary`, { params: dateParams })   
       ]);
 
-      // 1. Dados dos Cartões (Paginados)
+      // 1. Dados dos Cartões (Paginados E FILTRADOS)
       setData(dataRes.data.data);
       setTotalCount(dataRes.data.total); 
       setPage(currentPage); 
       
       // 2. Dados das Estatísticas (Totais)
       setStatsData(statsRes.data);
-
       // 3. Dados do Gráfico de Editor (Totais)
       setEditorPieData(rankingRes.data);
-
       // 4. Dados do Gráfico de Eixos (Totais)
       setEixosData(eixosRes.data); 
 
@@ -131,7 +127,7 @@ export default function Dashboard() {
       const res = await axios.get(`${API_URL}/export`, {
         responseType: 'blob',
         params: { 
-          editor: search || undefined,
+          search: search || undefined, // <-- 2. ENVIA O TERMO DE BUSCA
           startDate: startDate ? startDate.toISOString() : undefined,
           endDate: endDate ? endDate.toISOString() : undefined,
          },
@@ -148,20 +144,18 @@ export default function Dashboard() {
   };
 
   // Efeito que busca dados quando as datas ou a página mudam
+  // NOTA: A busca (search) é tratada pelo botão "Buscar"
   useEffect(() => {
     fetchData(page);
-  }, [startDate, endDate, page]); // Depende da página e das datas
+  }, [startDate, endDate, page]); 
 
-  // Efeito para os botões de filtro rápido
+  // Handlers de data
   const handleDatePresetChange = (
-    _event: React.MouseEvent<HTMLElement>, // Corrigido (variável não usada)
-    newPreset: DatePreset | null,
+    _event: React.MouseEvent<HTMLElement>, newPreset: DatePreset | null
   ) => {
     if (newPreset === null) return; 
-
     setDatePreset(newPreset);
-    setPage(1); // Reseta a página ao mudar o filtro
-
+    setPage(1); 
     if (newPreset === 'hoje') {
       setStartDate(startOfDay(new Date()));
       setEndDate(endOfDay(new Date()));
@@ -172,12 +166,9 @@ export default function Dashboard() {
       setStartDate(startOfMonth(new Date()));
       setEndDate(endOfMonth(new Date()));
     }
-    // Se for 'custom', não faz nada, deixa os DatePickers manuais
   };
-  
-  // Handler para os DatePickers manuais
   const handleManualDateChange = (isStart: boolean, newValue: Date | null) => {
-    setDatePreset('custom'); // Muda para o modo "custom"
+    setDatePreset('custom'); 
     setPage(1);
     if (isStart) {
       setStartDate(newValue ? startOfDay(newValue) : null);
@@ -186,27 +177,25 @@ export default function Dashboard() {
     }
   };
 
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Data inválida';
     const date = new Date(dateStr);
     return isValid(date) ? format(date, "dd 'de' MMM 'às' HH:mm", { locale: ptBR }) : 'Data inválida';
   };
   
-  // O filtro de busca agora só afeta os cartões (data)
-  const filteredData = useMemo(() => {
-    if (!search) return data;
-    return data.filter(
-      (item) =>
-        item.editorName.toLowerCase().includes(search.toLowerCase()) ||
-        item.documentName.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [data, search]);
+  // ==========================================================
+  // 3. REMOVIDO O FILTRO 'useMemo'
+  // Os dados (data) já vêm filtrados e paginados do servidor.
+  // ==========================================================
+  const filteredData = data;
 
   const pageCount = Math.ceil(totalCount / limit);
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box display="flex" justifyContent="center" mb={0} mt={-8}>
+      {/* --- LOGO --- */}
+      <Box display="flex" justifyContent="center" mb={0}>
         <img src="../../public/logo_NIC-PNG.png" alt="Logo da Empresa" height={350} width={500} />
       </Box>
 
@@ -255,7 +244,7 @@ export default function Dashboard() {
                 value={startDate}
                 onChange={(newValue) => handleManualDateChange(true, newValue)}
                 slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
-                disabled={datePreset !== 'custom'} // Desabilita se não for custom
+                disabled={datePreset !== 'custom'}
               />
             </Grid>
             {/* Filtro de Data Fim */}
@@ -265,13 +254,13 @@ export default function Dashboard() {
                 value={endDate}
                 onChange={(newValue) => handleManualDateChange(false, newValue)}
                 slotProps={{ textField: { fullWidth: true, margin: 'none' } }}
-                disabled={datePreset !== 'custom'} // Desabilita se não for custom
+                disabled={datePreset !== 'custom'}
               />
             </Grid>
             {/* Botão de BUSCAR / REFRESH */}
             <Grid xs={12} sm={6} md={2}>
                 <Button 
-                  onClick={() => fetchData(1)} // Sempre busca a página 1
+                  onClick={() => fetchData(1)} // 4. "Buscar" sempre busca a página 1
                   variant="contained" 
                   fullWidth 
                   startIcon={<Refresh />}
@@ -284,7 +273,7 @@ export default function Dashboard() {
             <Grid xs={12} sm={6} md={4}>
               <TextField
                 fullWidth
-                placeholder="Filtrar resultado por editor..."
+                placeholder="Buscar por editor ou documento..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 InputProps={{
@@ -296,7 +285,7 @@ export default function Dashboard() {
           </Grid>
         </Box>
         
-      
+        {/* --- GRÁFICOS DE GESTÃO --- */}
         {!loading && (
           <StatsCharts 
             statsData={statsData} 
@@ -328,7 +317,7 @@ export default function Dashboard() {
               </Typography>
             </Box>
           ) : (
-            /* DADOS REAIS (filtrados e paginados) */
+            /* DADOS REAIS (filtrados e paginados pelo servidor) */
             <Grid container spacing={3}>
               {filteredData.map((item) => (
                 <Grid xs={12} sm={6} lg={4} key={`${item.documentId}-${item.editorName}`}>
@@ -396,7 +385,7 @@ export default function Dashboard() {
               <Pagination 
                 count={pageCount}
                 page={page}
-                onChange={(_event, value) => setPage(value)} // Corrigido (variável não usada)
+                onChange={(_event, value) => setPage(value)}
                 color="primary"
               />
             </Box>
