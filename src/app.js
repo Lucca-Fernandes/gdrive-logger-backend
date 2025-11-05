@@ -162,9 +162,9 @@ async function cicloMonitor() {
           if (tempoAdd > 0) {
             const documentLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
             let folderPath = '/';
-            if (file.parents && file.parents.length > 0) {
-              folderPath = await buildFolderPath(file.parents[0], drive);
-            }
+           // if (file.parents && file.parents.length > 0) {
+          //   folderPath = await buildFolderPath(file.parents[0], drive);
+          // }
             
             await pool.query(`
               INSERT INTO time_logs 
