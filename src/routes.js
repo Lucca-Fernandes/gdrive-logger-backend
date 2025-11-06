@@ -237,55 +237,6 @@ router.get('/stats-summary', async (req, res) => {
   }
 });
 
-// ROTA DE EXPORTAÇÃO (CSV - COM BUSCA)
-router.get('/export', async (req, res) => {
-  try {
-    const { search, startDate, endDate } = req.query;
-    
-    let values = [];
-    let whereClauses = [];
-    let idx = 1;
-
-    if (startDate) {
-      whereClauses.push(`"event_time" >= $${idx}`);
-      values.push(startDate); idx++;
-    }
-    if (endDate) {
-      whereClauses.push(`"event_time" <= $${idx}`);
-      values.push(endDate); idx++;
-    }
-    if (search) {
-      whereClauses.push(`("document_name" ILIKE $${idx} OR "editor_name" ILIKE $${idx})`);
-      values.push(`%${search}%`); 
-      idx++;
-    }
-    
-    const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-
-    const result = await pool.query(`
-      SELECT * FROM time_logs 
-      ${whereString} 
-      ORDER BY "event_time" DESC
-    `, values);
-
-    const formatCSV = (date) => new Date(date).toLocaleString('pt-BR');
-
-    const csv = [
-      'Documento,Editor,Minutos Adicionados,Data Evento,Caminho',
-      ...result.rows.map(r => 
-        `"${r.document_name}","${r.editor_name}",${r.minutes_added},"${formatCSV(r.event_time)}","${r.folder_path}"`
-      )
-    ].join('\n');
-
-    res.header('Content-Type', 'text/csv; charset=utf-8');
-    res.attachment('relatorio_eventos.csv');
-    res.send(Buffer.from(csv, 'utf-8'));
-  } catch (err) {
-    console.error('Erro na rota /export:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ROTA DE SAÚDE
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

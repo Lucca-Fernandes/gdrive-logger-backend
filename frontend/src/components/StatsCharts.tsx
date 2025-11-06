@@ -1,128 +1,172 @@
 // src/components/StatsCharts.tsx
 import { useMemo } from 'react'; 
 import {
-  PieChart, Pie, Cell,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
+  BarChart, 
+  PieChart, // Usado para o gráfico de distribuição (coluna da direita)
+} from '@mui/x-charts';
 import { Card, CardContent, Typography, Box } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
-// REMOVIDOS AccessTime, Person, InsertDriveFile pois não são mais usados neste arquivo.
 
-// --- Interfaces ---
+// --- Interfaces (MANTIDAS) ---
 interface EixoData {
-  eixo: string;
-  totalMinutes: number;
+  eixo: string;
+  totalMinutes: number;
+  [key: string]: any; 
 }
 interface EditorRanking {
-  editorName: string; // Vem como 'editorName' do backend (/ranking)
-  total: number;      // Vem como 'total' do backend (/ranking)
+  editorName: string; 
+  total: number; 
+  [key: string]: any; 
 }
-
-
-// Define as props que o componente espera
 interface StatsChartsProps {
-  // statsData: StatsData; // REMOVIDO: Não é mais necessário, pois os cards não estão aqui.
-  editorPieData: EditorRanking[];
-  eixosData: EixoData[]; 
+  editorPieData: EditorRanking[];
+  eixosData: EixoData[]; 
+  pieChartOnly?: boolean;
 }
 // --- Fim Interfaces ---
 
-const COLORS = ['#1976d2', '#9c27b0', '#ff9800', '#4caf50', '#f44336', '#00bcd4'];
-
-// Função para encurtar nomes de eixos no gráfico
-const formatEixoName = (name: string) => {
-  if (name.length > 20) {
-    return name.substring(0, 17) + '...';
-  }
-  return name;
+// Função para formatar o nome do Editor no eixo (usada no Pie Chart)
+const formatEditorName = (name: string): string => {
+    const parts = name.split(' ');
+    // Mostra apenas o primeiro nome
+    return parts[0]; 
 };
 
-// Label personalizado para o Gráfico de Pizza
-const renderCustomLabel = (props: any) => {
-  const { name, percent } = props;
-  if (percent < 0.05) return null; 
-  return `${name}: ${(percent * 100).toFixed(0)}%`;
-};
 
-// 🌟 CORREÇÃO: Removida a prop 'statsData' das chaves do objeto, pois não é mais usada.
-export default function StatsCharts({ editorPieData, eixosData }: StatsChartsProps) {
+export default function StatsCharts({ editorPieData, pieChartOnly = false }: StatsChartsProps) { 
+  // O EixosData foi removido das dependências, mas mantido na interface para evitar erro no Dashboard.tsx
 
-  // Converte { editorName, total } para { name, value }
-  const pieChartData = useMemo(() => {
-    return editorPieData.map(item => ({
-      name: item.editorName,       
-      value: Number(item.total)  
-    }));
-  }, [editorPieData]);
+  // Prepara dados para o Bar Chart de Editores (Ranking)
+  const editorBarChartData = useMemo(() => {
+    const sortedData = editorPieData
+      .map(item => ({
+        name: item.editorName, 
+        value: Number(item.total), // Valor em minutos
+      }))
+      // ORDENAÇÃO para gráfico VERTICAL: Decrescente (o maior vem primeiro, à esquerda)
+      .sort((a, b) => b.value - a.value); 
 
-  return (
-    <Box mt={4} px={3}> 
-      {/* Título foi mantido, mas removi o título "Estatísticas do Período" pois ele já está no Dashboard */}
-      
-      <Grid container spacing={3}>
-        
-        {/* OS 3 CARDS DE MÉTRICAS RÁPIDAS FORAM REMOVIDOS DAQUI */}
+    return { dataset: sortedData, editorNames: sortedData.map(item => item.name) };
+  }, [editorPieData]);
+  
+  // Prepara dados para o PIE CHART (Editores)
+  const editorPieChartData = useMemo(() => {
+    return editorPieData.map((item, index) => ({
+        id: index,
+        value: Number(item.total),
+        label: formatEditorName(item.editorName),
+    }));
+  }, [editorPieData]);
 
-        {/* ========================================================== */}
-        {/* GRÁFICO DE PIZZA (Permanece) */}
-        {/* ========================================================== */}
-        <Grid xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold" mb={2}>
-                Tempo por Editor
-              </Typography>
-              <ResponsiveContainer width="100%" height={380}>
-                <PieChart>
-                  <Pie
-                    data={pieChartData} 
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={renderCustomLabel}
-                    outerRadius={120}
-                    fill="#8884d8"
-                    dataKey="value" 
-                    nameKey="name" 
-                  >
-                    {pieChartData.map((_, index) => ( 
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)} min`} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
+  // Value Formatter
+  const valueFormatter = (value: number | null): string => 
+    value !== null ? `${value.toFixed(1)} min` : '0 min'; 
 
-        {/* GRÁFICO DE EIXOS (Permanece) */}
-        <Grid xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold" mb={2}>
-                Tempo por Eixo
-              </Typography>
-              <ResponsiveContainer width="100%" height={380}>
-                <BarChart data={eixosData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis 
-                    dataKey="eixo" 
-                    type="category" 
-                    width={150} 
-                    tickFormatter={formatEixoName}
-                  />
-                  <Tooltip formatter={(value: number) => `${Number(value).toFixed(1)} min`} />
-                  <Legend />
-                  <Bar dataKey="totalMinutes" name="Minutos" fill="#1976d2" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    </Box>
-  );
+  const editorSeries = [
+      { 
+        dataKey: 'value', 
+        label: 'Minutos', 
+        color: '#9c27b0', // Roxo
+        valueFormatter: valueFormatter,
+      },
+  ];
+
+  // ==========================================================
+  // LÓGICA DE RENDERIZAÇÃO CONDICIONAL
+  // ==========================================================
+  
+  // 1. RENDERIZA APENAS O GRÁFICO DE PIZZA (para a coluna da direita)
+  if (pieChartOnly) {
+      const totalMinutes = editorPieData.reduce((acc, curr) => acc + curr.total, 0);
+
+      return (
+          <Box sx={{ height: '100%', minHeight: 300, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <PieChart
+                  series={[
+                      {
+                          data: editorPieChartData,
+                          innerRadius: 80, // Cria o efeito Donut
+                          outerRadius: 120,
+                          paddingAngle: 3,
+                          cornerRadius: 5,
+                          startAngle: -90,
+                          endAngle: 270,
+                      },
+                  ]}
+                  width={300}
+                  height={300}
+                  slotProps={{
+                  }}
+              />
+              <Box sx={{ mt: 2, width: '100%', maxWidth: 300 }}>
+                  {/* SIMULAÇÃO DE LEGENDA ABAIXO DO GRÁFICO */}
+                  {editorPieChartData.map((item, index) => (
+                      <Box key={item.id} display="flex" alignItems="center" justifyContent="space-between" py={0.5}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Box sx={{ 
+                                width: 10, height: 10, borderRadius: '50%', 
+                                bgcolor: `hsl(${(index * 360 / editorPieChartData.length) % 360}, 70%, 50%)` 
+                            }} /> 
+                            <Typography variant="body2">{item.label}</Typography>
+                          </Box>
+                          <Typography variant="body2" fontWeight="bold">{(item.value / totalMinutes * 100).toFixed(1)}%</Typography>
+                      </Box>
+                  ))}
+              </Box>
+          </Box>
+      );
+  }
+
+  // 2. RENDERIZA APENAS O GRÁFICO DE RANKING (o único gráfico principal restante)
+  return (
+    <Box mt={4} px={3}> 
+      <Grid container spacing={3}>
+        
+        {/* GRÁFICO DE BARRAS (Ranking de Produtividade) - AGORA EM LARGURA TOTAL (md=12) */}
+        <Grid xs={12} md={12}>
+          <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight="bold" mb={2}>
+                Ranking de Produtividade por Editor
+              </Typography>
+              <Box sx={{ height: 450, width: '100%' }}> {/* Aumentei a altura para 450 */}
+                <BarChart
+                    dataset={editorBarChartData.dataset}
+                    xAxis={[{ 
+                        scaleType: 'band', 
+                        data: editorBarChartData.editorNames,
+                        dataKey: 'name', 
+                        // Mostra o nome completo para melhor identificação
+                        valueFormatter: (value: string) => value, 
+                        tickLabelStyle: { 
+                            fontSize: 10, // Diminui a fonte
+                            angle: -45, 
+                            textAnchor: 'end',
+                        },
+                    }]}
+                    yAxis={[{ 
+                        scaleType: 'linear',
+                        label: 'Minutos',
+                        tickLabelStyle: { fontSize: 10 }
+                    }]}
+                    series={editorSeries}
+                    layout="vertical"
+                    margin={{ top: 20, right: 20, bottom: 100, left: 40 }} // Aumentei a margem inferior
+                    slotProps={{
+                        bar: {
+                            rx: 5,
+                            ry: 5,
+                        },
+                    }}
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* O GRÁFICO DE EIXOS FOI REMOVIDO DAQUI */}
+
+      </Grid>
+    </Box>
+  );
 }

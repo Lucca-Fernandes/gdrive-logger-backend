@@ -4,10 +4,9 @@ export default function Footer() {
   return (
     <Box 
       p={4}
-      bgcolor="primary.main" 
+      bgcolor="#212121" 
       color="white"          
       textAlign="center"
-      mt={4} 
     >
       
       <Typography variant="body1" color="white"> 
