@@ -1,16 +1,15 @@
 // src/pages/Dashboard.tsx
-import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'; 
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import axios from 'axios';
 import StatsCharts from '../components/StatsCharts';
-import AppHeader from '../components/AppHeader'; // Assume que é a Sidebar
+import AppHeader from '../components/AppHeader';
 import AnaliseCargos from '../components/AnaliseCargos';
 import {
   Paper, Box, TextField, InputAdornment,  
   Button, Card, CardContent, ToggleButton, ToggleButtonGroup, Typography
 } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
-// Importa o ícone de seta de volta e outros ícones
-import { Search, Refresh, AccessTime, Person, InsertDriveFile, Download } from '@mui/icons-material'; 
+import { Search, Refresh, AccessTime, Person, InsertDriveFile, Download } from '@mui/icons-material';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'; 
@@ -18,9 +17,9 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 
 const SIDEBAR_WIDTH = 250;
-const API_URL = 'https://gdrive-logger-backend.onrender.com/api'; // Certifique-se de que a URL está correta
+const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
-// Interfaces de Dados (Mantenha conforme seu projeto)
+// Interfaces de Dados
 interface Editor { 
     documentId: string; documentName: string; documentLink: string; 
     folderPath: string; editorName: string; totalMinutes: number; lastEdit: string | null; 
@@ -49,23 +48,12 @@ export default function Dashboard() {
   const [selectedCargo, setSelectedCargo] = useState<string | undefined>(undefined);
   const [selectedEditor, setSelectedEditor] = useState<string | undefined>(undefined);
 
-
+  // === FUNÇÃO DE BUSCA DA API (useCallback) ===
   const fetchData = useCallback(async (currentPage = 1, searchOverride?: string) => {
     
-    // 1. Prioridade do Filtro: Override (e.g., Editor) > Busca Manual > Drill-down
-    let currentFilter: string | undefined = undefined;
+    // O filtro da API é a busca manual/override (usado no Nível 3 ou na busca manual)
+    const currentFilter = searchOverride !== undefined ? searchOverride : (search || undefined);
     
-    if (searchOverride !== undefined) {
-        currentFilter = searchOverride;
-    } else if (selectedEditor) {
-        currentFilter = selectedEditor;
-    } else if (selectedCargo) {
-        currentFilter = selectedCargo;
-    } else if (search) {
-        currentFilter = search;
-    }
-
-    // 2. Lógica de Data (mantida)
     const start = datePreset === 'custom' && !startDate ? null : startDate;
     const end = datePreset === 'custom' && !endDate ? null : endDate;
     
@@ -77,94 +65,117 @@ export default function Dashboard() {
         }
     }
     
-    setError(false); setLoading(true);
-    
+    setError(false); 
+    setLoading(true);
+
     try {
       const dateParams = { startDate: (start || startDate)?.toISOString(), endDate: (end || endDate)?.toISOString() };
       const dataParams = {
         ...dateParams,
         page: currentPage,
         limit,
-        // Envia o filtro determinado pela lógica de prioridade
-        search: currentFilter || undefined 
+        search: currentFilter 
       };
 
-      // 3. Chama APIs de Stats/Ranking apenas se não houver filtro ativo (Nível 1)
-      if (!currentFilter) { 
-        const [dataRes, statsRes, rankingRes, eixosRes] = await Promise.all([
-          axios.get(`${API_URL}/data`, { params: dataParams }),
+      // 1. Chamada de dados principal (/data)
+      const dataRes = await axios.get(`${API_URL}/data`, { params: dataParams });
+      setData(dataRes.data.data); 
+      setTotalCount(dataRes.data.total); 
+      setPage(currentPage);
+      
+      // 2. Chamadas de Stats/Ranking/Eixos (SÓ CARREGA SE NÃO HOUVER FILTRO ATIVO)
+      // selectedCargo e selectedEditor são verificados aqui para garantir que o Dashboard principal
+      // não exiba stats de um filtro específico de drill-down
+      if (!currentFilter && !selectedCargo && !selectedEditor) { 
+        const [statsRes, rankingRes, eixosRes] = await Promise.all([
           axios.get(`${API_URL}/stats-summary`, { params: dateParams }),
           axios.get(`${API_URL}/ranking`, { params: dateParams }),
           axios.get(`${API_URL}/eixos-summary`, { params: dateParams })
         ]);
-        setStatsData(statsRes.data); setEditorPieData(rankingRes.data); setEixosData(eixosRes.data);
-        setData(dataRes.data.data); setTotalCount(dataRes.data.total); setPage(currentPage);
-      } else {
-        // Níveis 2 e 3 ou BUSCA MANUAL ATIVA: Apenas dados filtrados são necessários
-        const dataRes = await axios.get(`${API_URL}/data`, { params: dataParams });
-        setData(dataRes.data.data); setTotalCount(dataRes.data.total); setPage(currentPage);
+        setStatsData(statsRes.data); 
+        setEditorPieData(rankingRes.data); 
+        setEixosData(eixosRes.data);
       }
-    } catch (err) { console.error(err); setError(true); } finally { setLoading(false); }
+      
+    } catch (err) { 
+        console.error(err); 
+        setError(true); 
+    } finally { 
+        setLoading(false); 
+    }
+    
+  // As dependências 'selectedCargo' e 'selectedEditor' garantem que a função seja recriada
+  // quando o estado de drill-down muda.
   }, [startDate, endDate, limit, search, datePreset, selectedCargo, selectedEditor]); 
   
-  // Efeito para recarregar quando os filtros de data/drill-down mudam
+  // ==========================================================
+  // LÓGICA DE RECARGA: SÓ DISPARA A BUSCA GERAL NO NÍVEL 1 OU NÍVEL 3 (Com busca manual)
+  // ==========================================================
   useEffect(() => { 
-    // Garante que a primeira página de dados seja carregada corretamente
-    fetchData(page); 
-  }, [startDate, endDate, page, fetchData]); 
+    // A chamada de API só deve ser automática se:
+    // 1. Estiver no Nível 1 (sem cargo/editor selecionado)
+    // 2. Estiver no Nível 3 (com selectedEditor)
+    // 3. Estiver com uma busca manual (search) ativa
+    if (!selectedCargo || selectedEditor || search) {
+        fetchData(page); 
+    }
+    // NÃO CHAMA: Se estiver no Nível 2 (selectedCargo && !selectedEditor), 
+    // pois ele usa agregação LOCAL
+    
+  }, [fetchData, page, selectedCargo, selectedEditor, search]); 
 
   // === FUNÇÕES DE NAVEGAÇÃO E BUSCA ===
   
-  // 1. Busca Manual (Sobrescreve qualquer drill-down)
   const handleSearch = () => { 
+    // CORREÇÃO: Ao buscar manualmente, reseta os estados de drill-down
     setSelectedCargo(undefined); 
     setSelectedEditor(undefined);
     setPage(1); 
-    // fetchData(1) usará o state `search`
     fetchData(1); 
   };
   
-  // 2. Nível 1 -> Nível 2 (Seleciona o Cargo)
+  // Nível 1 -> Nível 2 (Seleciona o Cargo/Pasta) - Agregação Local
   const handleCargoSelect = (cargoName: string) => {
-    setSearch(''); // Limpa a busca manual
+    setSearch(''); 
     setSelectedCargo(cargoName);
     setSelectedEditor(undefined); 
     setPage(1);
-    // Não precisa de fetchData: o useEffect pega a mudança de state e chama fetchData(1)
+    // NÃO CHAMA fetchData: usa os dados carregados do Nível 1 para agregação local.
   };
 
-  // 3. Nível 2 -> Nível 3 (Seleciona o Editor/Funcionário)
+  // Nível 2 -> Nível 3 (Seleciona o Editor/Funcionário) - Nova Chamada de API
   const handleEditorSelect = (editorName: string) => {
-    setSearch(''); // Limpa a busca manual
+    setSearch(''); 
     setSelectedEditor(editorName);
     setPage(1);
-    // Força o filtro do editor (busca Nível 3)
+    // CHAMA fetchData explicitamente com o override do editor.
     fetchData(1, editorName); 
   };
 
-  // 4. Nível 3 -> Nível 2 (Volta para a lista de Editores/Funcionários do Cargo)
+  // Nível 3 -> Nível 2 (Volta para a lista de Editores/Funcionários do Cargo) - Agregação Local
   const handleBackToEditors = () => {
-    setSearch(''); // Limpa a busca manual
+    setSearch(''); 
     setSelectedEditor(undefined); 
     setPage(1);
-    // Não precisa de fetchData: o useEffect pega a mudança de state e chama fetchData(1)
+    // NÃO CHAMA fetchData: volta para a agregação local do Nível 2.
+    // É importante que o 'data' ainda contenha todos os dados do cargo selecionado.
   };
   
-  // 5. Nível 2 -> Nível 1 (Volta para a lista de Cargos)
+  // Nível 2 -> Nível 1 (Volta para a lista de Cargos/Eixos) - Nova Chamada de API
   const handleBackToCargos = () => {
-    setSearch(''); // Limpa a busca manual
+    setSearch(''); 
     setSelectedCargo(undefined);
     setSelectedEditor(undefined);
     setPage(1);
-    // Pede ao Dashboard para carregar os dados gerais novamente (filtro = undefined)
+    // CHAMA fetchData para RECARREGAR os dados gerais (filtro = undefined).
     fetchData(1, undefined); 
   };
   
-  // 6. Lógica de Data (mantida)
+  // Lógica de Data (mantida)
   const handleDatePresetChange = (_e: any, newPreset: DatePreset | null) => {
     if (!newPreset) return;
     setDatePreset(newPreset); setPage(1);
-    setSelectedCargo(undefined); setSelectedEditor(undefined); // Reseta drill-down
+    setSelectedCargo(undefined); setSelectedEditor(undefined); // Reset Drill-down
     if (newPreset === 'hoje') { setStartDate(startOfDay(new Date())); setEndDate(endOfDay(new Date())); }
     else if (newPreset === 'semana') { setStartDate(startOfWeek(new Date(), { locale: ptBR })); setEndDate(endOfWeek(new Date(), { locale: ptBR })); }
     else if (newPreset === 'mes') { setStartDate(startOfMonth(new Date())); setEndDate(endOfMonth(new Date())); }
@@ -174,10 +185,10 @@ export default function Dashboard() {
     if (isStart) setStartDate(newValue ? startOfDay(newValue) : null);
     else setEndDate(newValue ? endOfDay(newValue) : null);
     setDatePreset('custom'); setPage(1);
-    setSelectedCargo(undefined); setSelectedEditor(undefined); // Reseta drill-down
+    setSelectedCargo(undefined); setSelectedEditor(undefined); // Reset Drill-down
   };
 
-  // 7. Exportar CSV (se aplicável no seu projeto)
+  // Exportar CSV (mantido)
   const exportCSV = async () => { /* ... sua lógica de exportação ... */ };
   
   // === RENDERIZAÇÃO ===
@@ -195,7 +206,6 @@ export default function Dashboard() {
         >
           <Box sx={{ py: 3, px: 3 }}> 
             
-            {/* Box de Ações no Topo - Botão Exportar (Direita) */}
             <Box display="flex" justifyContent="flex-end" alignItems="center" mb={2} sx={{ minHeight: '36.5px' }}>
               <Button 
                 variant="contained" 
@@ -257,7 +267,7 @@ export default function Dashboard() {
             {/* ESTATÍSTICAS + GRÁFICOS - Oculta em Nível 2 ou 3 (Drill-down) */}
             {!loading && !selectedCargo && !selectedEditor && ( 
               <>
-                {/* Cards de Estatísticas (Mantenha o seu código de cards aqui) */}
+                {/* Cards de Estatísticas (Mantido) */}
                 <Grid container spacing={3} mb={4}>
                   <Grid xs={12} sm={4}>
                     <Card sx={{ borderRadius: 3, boxShadow: 1, p: 1 }}> 
@@ -330,7 +340,7 @@ export default function Dashboard() {
               currentPage={page}
               onPageChange={setPage}
               fetchData={fetchData} 
-              // PROPS DE NAVEGAÇÃO - ESTAS DEVEM ESTAR PRESENTES!
+              // PROPS DE NAVEGAÇÃO
               selectedCargo={selectedCargo}
               selectedEditor={selectedEditor}
               onCargoSelect={handleCargoSelect}
@@ -341,7 +351,7 @@ export default function Dashboard() {
 
           </Paper>
         </Box> 
-        </Box> 
+      </Box> 
       </Box> 
     </LocalizationProvider>
   );
