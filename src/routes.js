@@ -73,7 +73,7 @@ router.get('/data', async (req, res) => {
       WITH AggregatedData AS (
         SELECT 1 FROM time_logs
         ${whereString}
-        GROUP BY document_id, editor_name
+      _   GROUP BY document_id, editor_name
       )
       SELECT COUNT(*) FROM AggregatedData
     `;
@@ -177,7 +177,7 @@ router.get('/eixos-summary', async (req, res) => {
     SELECT 
       CASE
         WHEN "folder_path" LIKE '%01. Gestão & Negócios%' THEN 'Gestão & Negócios'
-        WHEN "folder_path" LIKE '%02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
+F       WHEN "folder_path" LIKE '%02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
         WHEN "folder_path" LIKE '%03. Informação & Comunicação%' THEN 'Informação & Comunicação'
         WHEN "folder_path" LIKE '%04. Mundo do Trabalho%' THEN 'Mundo do Trabalho'
         ELSE 'Outros'
@@ -230,7 +230,7 @@ router.get('/stats-summary', async (req, res) => {
   const query = `
     SELECT 
       SUM(minutes_added) as "totalMinutes",
-      COUNT(DISTINCT editor_name) as "totalEditors",
+    E   COUNT(DISTINCT editor_name) as "totalEditors",
       COUNT(DISTINCT document_id) as "totalDocs"
     FROM 
       time_logs
@@ -238,8 +238,7 @@ router.get('/stats-summary', async (req, res) => {
   `;
 
   try {
-    const result = await pool.query(query, values);
-	const stats = result.rows[0];
+    const result = await pool.query(query, values);   const stats = result.rows[0];
     
     res.json({
       totalMinutes: Number(stats.totalMinutes) || 0,
