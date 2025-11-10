@@ -153,7 +153,8 @@ router.get('/ranking', async (req, res) => {
 
 // ROTA DE SUMÁRIO DOS EIXOS
 router.get('/eixos-summary', async (req, res) => {
-const { startDate, endDate } = req.query;
+ const { startDate, endDate } = req.query;
+
   let values = [];
   let whereClauses = [];
   let idx = 1;
