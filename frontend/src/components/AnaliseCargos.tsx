@@ -228,7 +228,7 @@ export default function AnaliseCargos({
                 startIcon={<ArrowBack />}
                 sx={{ mb: 3 }}
             >
-                &larr; Voltar para Editores ({selectedCargo})
+                 Voltar para Editores ({selectedCargo})
             </Button>
 
             <Typography variant="h5" gutterBottom sx={{ mb: 3, fontWeight: 'bold' }}>
@@ -311,7 +311,7 @@ export default function AnaliseCargos({
                 startIcon={<ArrowBack />}
                 sx={{ mb: 3 }}
             >
-                &larr; Voltar para Cargos
+                 Voltar para Cargos
             </Button>
             
             <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
