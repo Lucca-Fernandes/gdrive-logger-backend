@@ -68,12 +68,12 @@ router.get('/data', async (req, res) => {
       ORDER BY "totalMinutes" DESC
     `;
     
-    // A query de contagem continua igual
+    // A query de contagem (CORRIGIDA - sem o caractere '_ ')
     const countQuery = `
       WITH AggregatedData AS (
         SELECT 1 FROM time_logs
         ${whereString}
-      _   GROUP BY document_id, editor_name
+        GROUP BY document_id, editor_name
       )
       SELECT COUNT(*) FROM AggregatedData
     `;
@@ -102,15 +102,15 @@ router.get('/data', async (req, res) => {
     res.json({
       data: dataResult.rows,
       total: parseInt(countResult.rows[0].count),
-      // MUDANÇA 4: Garante que 'page' e 'limit' não sejam NaN e REMOVE O ESPAÇO
+      // MUDANÇA 4: Garante que 'page' e 'limit' não sejam NaN
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 0
     });
 
   } catch (err) {
     console.error('Erro na rota /data:', err.message);
-    // Adiciona uma resposta de erro para o cliente
-    res.status(500).json({ error: 'Erro interno no servidor', details: err.message });
+    // Adiciona uma resposta de erro para o cliente
+    res.status(500).json({ error: 'Erro interno no servidor', details: err.message });
   }
 });
 
@@ -153,8 +153,7 @@ router.get('/ranking', async (req, res) => {
 
 // ROTA DE SUMÁRIO DOS EIXOS
 router.get('/eixos-summary', async (req, res) => {
-  const { startDate, endDate } = req.query;
-
+const { startDate, endDate } = req.query;
   let values = [];
   let whereClauses = [];
   let idx = 1;
@@ -177,7 +176,7 @@ router.get('/eixos-summary', async (req, res) => {
     SELECT 
       CASE
         WHEN "folder_path" LIKE '%01. Gestão & Negócios%' THEN 'Gestão & Negócios'
-F       WHEN "folder_path" LIKE '%02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
+        WHEN "folder_path" LIKE '%02. Turismo, Hospitalidade & Lazer%' THEN 'Turismo, Hosp. & Lazer'
         WHEN "folder_path" LIKE '%03. Informação & Comunicação%' THEN 'Informação & Comunicação'
         WHEN "folder_path" LIKE '%04. Mundo do Trabalho%' THEN 'Mundo do Trabalho'
         ELSE 'Outros'
@@ -230,7 +229,7 @@ router.get('/stats-summary', async (req, res) => {
   const query = `
     SELECT 
       SUM(minutes_added) as "totalMinutes",
-    E   COUNT(DISTINCT editor_name) as "totalEditors",
+      COUNT(DISTINCT editor_name) as "totalEditors",
       COUNT(DISTINCT document_id) as "totalDocs"
     FROM 
       time_logs
@@ -238,7 +237,8 @@ router.get('/stats-summary', async (req, res) => {
   `;
 
   try {
-    const result = await pool.query(query, values);   const stats = result.rows[0];
+    const result = await pool.query(query, values);
+    const stats = result.rows[0];
     
     res.json({
       totalMinutes: Number(stats.totalMinutes) || 0,
