@@ -68,6 +68,7 @@ router.get('/data', async (req, res) => {
       ORDER BY "totalMinutes" DESC
     `; // <<< FIM DA MUDANÇA 2
     
+    // A query de contagem continua igual
     const countQuery = `
       WITH AggregatedData AS (
         SELECT 1 FROM time_logs
@@ -109,7 +110,6 @@ router.get('/data', async (req, res) => {
 
   } catch (err) {
     console.error('Erro na rota /data:', err.message);
-    res.status(500).json({ error: err.message });
   }
 });
 
@@ -238,7 +238,7 @@ router.get('/stats-summary', async (req, res) => {
 
   try {
     const result = await pool.query(query, values);
-   const stats = result.rows[0];
+    const stats = result.rows[0];
     
     res.json({
       totalMinutes: Number(stats.totalMinutes) || 0,
