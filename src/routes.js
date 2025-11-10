@@ -20,7 +20,7 @@ router.post('/login', (req, res) => {
 // ==========================================================
 router.get('/data', async (req, res) => {
   try {
-    // <<< MUDANÇA 1: Removidos os valores padrão de 'page' e 'limit'
+    // MUDANÇA 1: Removidos os valores padrão de 'page' e 'limit'
     const { search, startDate, endDate, page, limit } = req.query;
     
     let values = [];
@@ -47,7 +47,7 @@ router.get('/data', async (req, res) => {
 
     const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
-    // <<< MUDANÇA 2: 'dataQuery' agora é 'let' e NÃO TEM 'LIMIT'/'OFFSET'
+    // MUDANÇA 2: 'dataQuery' agora é 'let' e NÃO TEM 'LIMIT'/'OFFSET'
     let dataQuery = `
       WITH AggregatedData AS (
         SELECT 
@@ -66,7 +66,7 @@ router.get('/data', async (req, res) => {
       )
       SELECT * FROM AggregatedData
       ORDER BY "totalMinutes" DESC
-    `; // <<< FIM DA MUDANÇA 2
+    `;
     
     // A query de contagem continua igual
     const countQuery = `
@@ -78,22 +78,21 @@ router.get('/data', async (req, res) => {
       SELECT COUNT(*) FROM AggregatedData
     `;
 
-    // <<< MUDANÇA 3: Lógica de paginação movida para um bloco 'if'
-    
-    // Salva os valores da query de contagem (que nunca tem paginação)
-    const countValues = [...values]; 
+    // MUDANÇA 3: Lógica de paginação movida para um bloco 'if'
+    
+    // Salva os valores da query de contagem (que nunca tem paginação)
+    const countValues = [...values]; 
 
-    // Adiciona paginação à query de dados APENAS SE 'limit' e 'page' forem passados
-    if (limit && page) {
-      const parsedLimit = parseInt(limit, 10);
-      const parsedPage = parseInt(page, 10);
-      const offset = (parsedPage - 1) * parsedLimit;
-      
-      dataQuery += ` LIMIT $${idx++} OFFSET $${idx++}`; // Adiciona ao SQL
-      values.push(parsedLimit); // Adiciona aos valores da dataQuery
-      values.push(offset);
-    }
-    // <<< FIM DA MUDANÇA 3
+    // Adiciona paginação à query de dados APENAS SE 'limit' e 'page' forem passados
+    if (limit && page) {
+      const parsedLimit = parseInt(limit, 10);
+      const parsedPage = parseInt(page, 10);
+      const offset = (parsedPage - 1) * parsedLimit;
+      
+      dataQuery += ` LIMIT $${idx++} OFFSET $${idx++}`; // Adiciona ao SQL
+      values.push(parsedLimit); // Adiciona aos valores da dataQuery
+      values.push(offset);
+    }
 
     const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, values), // 'values' pode ou não ter paginação
@@ -103,13 +102,15 @@ router.get('/data', async (req, res) => {
     res.json({
       data: dataResult.rows,
       total: parseInt(countResult.rows[0].count),
-      // <<< MUDANÇA 4: Garante que 'page' e 'limit' não sejam NaN se forem indefinidos
+      // MUDANÇA 4: Garante que 'page' e 'limit' não sejam NaN e REMOVE O ESPAÇO
       page: parseInt(page) || 1,
-      limit: parseInt(limit) || 0 
+      limit: parseInt(limit) || 0
     });
 
   } catch (err) {
     console.error('Erro na rota /data:', err.message);
+    // Adiciona uma resposta de erro para o cliente
+    res.status(500).json({ error: 'Erro interno no servidor', details: err.message });
   }
 });
 
@@ -238,7 +239,7 @@ router.get('/stats-summary', async (req, res) => {
 
   try {
     const result = await pool.query(query, values);
-    const stats = result.rows[0];
+	const stats = result.rows[0];
     
     res.json({
       totalMinutes: Number(stats.totalMinutes) || 0,
