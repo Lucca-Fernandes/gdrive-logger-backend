@@ -19,6 +19,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 const SIDEBAR_WIDTH = 250;
 const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
+// Interfaces
 interface Editor { 
   documentId: string; documentName: string; documentLink: string; 
   folderPath: string; editorName: string; totalMinutes: number; lastEdit: string | null; 
@@ -26,6 +27,12 @@ interface Editor {
 interface EixoSummary { eixo: string; totalMinutes: number; }
 interface EditorRanking { editorName: string; total: number; }
 interface StatsSummary { totalMinutes: number; totalEditors: number; totalDocs: number; }
+interface CargoSummary {
+  cargoName: string;
+  totalMinutes: number;
+  totalEditors: number;
+  lastEdit: string | null;
+}
 type DatePreset = 'hoje' | 'semana' | 'mes' | 'custom';
 
 export default function Dashboard() {
@@ -34,6 +41,7 @@ export default function Dashboard() {
   const [eixosData, setEixosData] = useState<EixoSummary[]>([]);
   const [editorPieData, setEditorPieData] = useState<EditorRanking[]>([]);
   const [statsData, setStatsData] = useState<StatsSummary>({ totalMinutes: 0, totalEditors: 0, totalDocs: 0 });
+  const [cargosSummary, setCargosSummary] = useState<CargoSummary[]>([]); // ← NOVO ESTADO
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -47,8 +55,6 @@ export default function Dashboard() {
   // DRILL-DOWN
   const [selectedCargo, setSelectedCargo] = useState<string | undefined>(undefined);
   const [selectedEditor, setSelectedEditor] = useState<string | undefined>(undefined);
-
-  // NOVO: Resumo dos editores do cargo (vem do backend!)
   const [editorsSummary, setEditorsSummary] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
@@ -70,17 +76,16 @@ export default function Dashboard() {
 
       const apiSearchTerm = selectedEditor ? selectedEditor : search;
 
-      // 1. Se estiver no Nível 2 (cargo selecionado, sem editor)
+      // 1. Nível 2: resumo de editores por cargo
       if (selectedCargo && !selectedEditor && !search) {
-        // Carrega resumo dos editores do cargo
         const summaryRes = await axios.get(`${API_URL}/cargo/${selectedCargo}/editors-summary`, { params: dateParams });
         setEditorsSummary(summaryRes.data);
-        setData([]); // limpa lista de documentos
+        setData([]);
         setLoading(false);
         return;
       }
 
-      // 2. Caso contrário: busca normal com paginação
+      // 2. Nível 3 ou busca: documentos com paginação
       const dataParams: any = {
         ...dateParams,
         search: apiSearchTerm || undefined
@@ -99,19 +104,22 @@ export default function Dashboard() {
         setNivel1DataCache(dataRes.data.data);
       }
 
+      // 3. Nível 1: carrega TODOS os resumos (cargos, stats, etc)
       if (!apiSearchTerm && !selectedCargo) {
-        const [statsRes, rankingRes, eixosRes] = await Promise.all([
+        const [statsRes, rankingRes, eixosRes, cargosRes] = await Promise.all([
           axios.get(`${API_URL}/stats-summary`, { params: dateParams }),
           axios.get(`${API_URL}/ranking`, { params: dateParams }),
-          axios.get(`${API_URL}/eixos-summary`, { params: dateParams })
+          axios.get(`${API_URL}/eixos-summary`, { params: dateParams }),
+          axios.get(`${API_URL}/cargos-summary`, { params: dateParams }) // ← NOVA ROTA!
         ]);
         setStatsData(statsRes.data);
         setEditorPieData(rankingRes.data);
         setEixosData(eixosRes.data);
+        setCargosSummary(cargosRes.data); // ← Preenche os cards corretamente
       }
 
     } catch (err) {
-      console.error(err);
+      console.error('Erro no fetchData:', err);
       setError(true);
     } finally {
       setLoading(false);
@@ -218,6 +226,7 @@ export default function Dashboard() {
                 </Grid>
               </Box>
 
+              {/* Estatísticas e gráficos */}
               {!loading && !selectedCargo && !selectedEditor && !search && (
                 <>
                   <Grid container spacing={3} mb={4}>
@@ -262,6 +271,7 @@ export default function Dashboard() {
                 </>
               )}
 
+              {/* Componente principal */}
               <AnaliseCargos
                 data={data}
                 loading={loading}
@@ -273,7 +283,7 @@ export default function Dashboard() {
                 fetchData={fetchData}
                 selectedCargo={selectedCargo}
                 selectedEditor={selectedEditor}
-                editorsSummary={editorsSummary}  // NOVA PROP
+                editorsSummary={editorsSummary}
                 onCargoSelect={handleCargoSelect}
                 onEditorSelect={handleEditorSelect}
                 onBackToEditors={handleBackToEditors}
