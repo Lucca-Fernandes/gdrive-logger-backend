@@ -124,10 +124,15 @@ router.get('/data', async (req, res) => {
 });
 
 // NOVA ROTA: Resumo de editores por cargo (SEM paginação) - CORREÇÃO DO BUG
+// ROTA: Resumo de editores por cargo (SEM paginação)
 router.get('/cargo/:cargo/editors-summary', async (req, res) => {
   try {
-    const { cargo } = req.params;
+    const { cargo } = req.params; // ← AQUI ESTÁ O CARGO!
     const { startDate, endDate } = req.query;
+
+    // DEBUG TEMPORÁRIO (pode remover depois)
+    console.log('Cargo solicitado:', cargo);
+    console.log('Período:', startDate, 'até', endDate);
 
     if (!startDate || !endDate) {
       return res.json([]);
@@ -141,7 +146,12 @@ router.get('/cargo/:cargo/editors-summary', async (req, res) => {
     });
 
     const editors = cargoToEditors[cargo] || [];
-    if (editors.length === 0) return res.json([]);
+    console.log('Editores mapeados para esse cargo:', editors); // ← veja se aparece os editores
+
+    if (editors.length === 0) {
+      console.log('Nenhum editor mapeado para o cargo:', cargo);
+      return res.json([]);
+    }
 
     const result = await pool.query(`
       SELECT 
@@ -164,13 +174,13 @@ router.get('/cargo/:cargo/editors-summary', async (req, res) => {
       lastEdit: row.lastEdit
     }));
 
+    console.log('Resumo retornado:', summary); // ← veja se tem dados
     res.json(summary);
+
   } catch (err) {
     console.error('Erro em /cargo/:cargo/editors-summary:', err.message);
     res.status(500).json({ error: err.message });
   }
-  console.log('Cargo solicitado:', cargo);
-  console.log('Editores encontrados:', editors);
 });
 
 // ROTA DE RANKING (TOP EDITORES)
