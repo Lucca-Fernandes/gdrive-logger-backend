@@ -122,6 +122,48 @@ router.get('/data', async (req, res) => {
   }
 });
 
+router.get('/stats-summary', async (req, res) => {
+  try {
+    const { startDate, endDate, cargo, editor } = req.query;
+    let values = [];
+    let where = [];
+    let idx = 1;
+
+    if (startDate) { where.push(`event_time >= $${idx++}`); values.push(startDate); }
+    if (endDate)   { where.push(`event_time <= $${idx++}`); values.push(endDate); }
+    if (cargo)     { where.push(`editor_name = ANY($${idx++})`); values.push(getEditorsByCargo(cargo)); }
+    if (editor)    { where.push(`editor_name = $${idx++}`); values.push(editor); }
+
+    const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+    const query = `
+      SELECT 
+        COALESCE(SUM(minutes_added), 0) as "totalMinutes",
+        COUNT(DISTINCT editor_name) as "totalEditors",
+        COUNT(DISTINCT document_id) as "totalDocs"
+      FROM time_logs ${whereStr}
+    `;
+
+    const result = await pool.query(query, values);
+    const row = result.rows[0];
+
+    res.json({
+      totalMinutes: Number(row.totalMinutes) || 0,
+      totalEditors: Number(row.totalEditors) || 0,
+      totalDocs: Number(row.totalDocs) || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// FUNÇÃO AUXILIAR
+function getEditorsByCargo(cargo) {
+  return Object.entries(CARGOS_MOCK)
+    .filter(([_, c]) => c === cargo)
+    .map(([e]) => e);
+}
+
 // NOVA ROTA: Resumo de TODOS os cargos (para o Nível 1)
 router.get('/cargos-summary', async (req, res) => {
   try {

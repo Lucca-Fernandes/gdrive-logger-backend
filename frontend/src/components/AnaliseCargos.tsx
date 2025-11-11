@@ -1,5 +1,4 @@
 // src/components/AnaliseCargos.tsx
-import { useMemo } from 'react';
 import {
   Box, Typography, Card, CardContent, CardActions, Button, Chip, Avatar,
   Alert, Skeleton, Pagination, LinearProgress
@@ -44,7 +43,8 @@ interface AnaliseCargosProps {
 
   selectedCargo: string | undefined;
   selectedEditor: string | undefined;
-  editorsSummary: EditorSummary[]; // ← NOVO: vem do backend
+  editorsSummary: EditorSummary[];
+  cargosSummary: CargoSummary[]; // ← ADICIONADO
 
   onCargoSelect: (cargoName: string) => void;
   onEditorSelect: (editorName: string) => void;
@@ -52,32 +52,6 @@ interface AnaliseCargosProps {
   onBackToCargos: () => void;
 }
 
-// Mapeamento editor → cargo
-const CARGOS_MOCK: { [key: string]: string } = {
-  'everton.marques': 'Web Designer',
-  'flavio.junior': 'Roteirista',
-  'jonatas.barreto': 'Roteirista',
-  'amanda.delrio': 'Revisão',
-  'nilce.almeida': 'Revisão',
-  'monica.alves': 'Pesquisa Iconográfica',
-  'nubia.santiago': 'Pesquisa Iconográfica',
-  'gabriela.amaro': 'Designer Gráfico',
-  'laura.amorim': 'Designer Gráfico',
-  'stephanie.gomes': 'Revisão',
-  'thiago.santos': 'Designer Gráfico',
-  'viviane.gonzaga': 'Design Educacional',
-  'willy': 'Revisão',
-  'liliene.santana': 'Design Educacional',
-  'tamires.ferreira': 'Design Educacional',
-  'vicente.silva': 'Design Educacional',
-  'deijiane.cruz': 'Coordenadora do Eixo de Gestão',
-  'matheus.souza': 'Coordenadora do Eixo de Gestão',
-  'leandro.azevedo': 'Coordenadora de TI',
-  'valerio.oliveira': 'Coordenador de Validação',
-  'fabio.pessoa': 'Coordenador de Turismo',
-};
-
-const getCargoByEditorName = (editorName: string) => CARGOS_MOCK[editorName] || 'Cargo Não Mapeado';
 const safeNumber = (value: any): number => parseFloat(value as string) || 0;
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return 'Nunca';
@@ -98,60 +72,12 @@ export default function AnaliseCargos({
   selectedCargo,
   selectedEditor,
   editorsSummary,
+  cargosSummary, // ← RECEBIDO DO DASHBOARD
   onCargoSelect,
   onEditorSelect,
   onBackToEditors,
   onBackToCargos,
 }: AnaliseCargosProps) {
-
-  // Mapa cargo → editores
-  const editorsByCargoMap = useMemo(() => {
-    const map = new Map<string, string[]>();
-    Object.entries(CARGOS_MOCK).forEach(([editor, cargo]) => {
-      if (!map.has(cargo)) map.set(cargo, []);
-      map.get(cargo)!.push(editor);
-    });
-    return map;
-  }, []);
-
-  // === NÍVEL 1: CARGOS ===
-  const aggregatedCargos: CargoSummary[] = useMemo(() => {
-    if (selectedCargo || selectedEditor) return [];
-
-    const totals: { [key: string]: { totalMinutes: number; editors: Set<string>; lastEdit: string | null } } = {};
-
-    data.forEach(item => {
-      const cargoName = getCargoByEditorName(item.editorName);
-      if (!totals[cargoName]) {
-        totals[cargoName] = { totalMinutes: 0, editors: new Set(), lastEdit: null };
-      }
-      totals[cargoName].totalMinutes += safeNumber(item.totalMinutes);
-      totals[cargoName].editors.add(item.editorName);
-      if (item.lastEdit && (!totals[cargoName].lastEdit || new Date(item.lastEdit) > new Date(totals[cargoName].lastEdit!))) {
-        totals[cargoName].lastEdit = item.lastEdit;
-      }
-    });
-
-    // Garante que todos os cargos apareçam (mesmo sem atividade)
-    editorsByCargoMap.forEach((_editors, cargoName) => {
-      if (!totals[cargoName]) {
-        totals[cargoName] = { totalMinutes: 0, editors: new Set(_editors), lastEdit: null };
-      }
-    });
-
-    return Object.entries(totals)
-      .map(([name, stats]) => ({
-        cargoName: name,
-        totalMinutes: stats.totalMinutes,
-        totalEditors: stats.editors.size,
-        lastEdit: stats.lastEdit,
-      }))
-      .sort((a, b) => b.totalMinutes - a.totalMinutes);
-  }, [data, selectedCargo, selectedEditor, editorsByCargoMap]);
-
-  // === NÍVEL 2: EDITORES (agora vem direto do backend!) ===
-  const aggregatedEditors = editorsSummary;
-  
 
   const pageCount = Math.ceil(totalCount / limit);
 
@@ -159,6 +85,9 @@ export default function AnaliseCargos({
     onPageChange(page);
     fetchData();
   };
+
+  // USA DIRETAMENTE O QUE VEM DO BACKEND
+  const aggregatedCargos: CargoSummary[] = selectedCargo || selectedEditor ? [] : cargosSummary;
 
   // === RENDER DOCUMENTOS (NÍVEL 3) ===
   const renderDocumentList = () => (
@@ -247,13 +176,13 @@ export default function AnaliseCargos({
 
       {loading && <LinearProgress sx={{ my: 2 }} />}
 
-      {aggregatedEditors.length === 0 && !loading ? (
+      {editorsSummary.length === 0 && !loading ? (
         <Alert severity="info" sx={{ my: 2 }}>
           Nenhum editor encontrado no cargo "{selectedCargo}" com atividades no período.
         </Alert>
       ) : (
         <Grid container spacing={3}>
-          {aggregatedEditors.map(editor => {
+          {editorsSummary.map(editor => {
             const hasActivity = editor.totalMinutes > 0;
             return (
               <Grid xs={12} sm={6} md={3} key={editor.editorName}>
@@ -313,33 +242,35 @@ export default function AnaliseCargos({
         </Alert>
       ) : (
         <Grid container spacing={3}>
-          {aggregatedCargos.map(cargo => {
-            const hasActivity = cargo.totalMinutes > 0;
-            return (
-              <Grid xs={12} sm={6} md={3} key={cargo.cargoName}>
-                <Card
-                  onClick={() => onCargoSelect(cargo.cargoName)}
-                  sx={{
-                    cursor: 'pointer',
-                    p: 3,
-                    textAlign: 'center',
-                    height: '100%',
-                    transition: '0.2s',
-                    '&:hover': { bgcolor: 'primary.light', boxShadow: 3 },
-                  }}
-                >
-                  <Folder fontSize="large" color={hasActivity ? 'primary' : 'disabled'} />
-                  <Typography variant="h6" mt={1}>{cargo.cargoName}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {cargo.totalEditors} Editores
-                  </Typography>
-                  <Typography variant="body2" fontWeight="bold" color={hasActivity ? 'success.main' : 'error.main'} mt={1}>
-                    {minutesToHours(cargo.totalMinutes)} horas
-                  </Typography>
-                </Card>
-              </Grid>
-            );
-          })}
+          {aggregatedCargos
+            .filter(c => c.cargoName !== 'Cargo Não Mapeado')
+            .map(cargo => {
+              const hasActivity = cargo.totalMinutes > 0;
+              return (
+                <Grid xs={12} sm={6} md={3} key={cargo.cargoName}>
+                  <Card
+                    onClick={() => onCargoSelect(cargo.cargoName)}
+                    sx={{
+                      cursor: 'pointer',
+                      p: 3,
+                      textAlign: 'center',
+                      height: '100%',
+                      transition: '0.2s',
+                      '&:hover': { bgcolor: 'primary.light', boxShadow: 3 },
+                    }}
+                  >
+                    <Folder fontSize="large" color={hasActivity ? 'primary' : 'disabled'} />
+                    <Typography variant="h6" mt={1}>{cargo.cargoName}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {cargo.totalEditors} Editores
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold" color={hasActivity ? 'success.main' : 'error.main'} mt={1}>
+                      {minutesToHours(cargo.totalMinutes)} horas
+                    </Typography>
+                  </Card>
+                </Grid>
+              );
+            })}
         </Grid>
       )}
     </>
