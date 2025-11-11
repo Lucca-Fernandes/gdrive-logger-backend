@@ -130,10 +130,6 @@ router.get('/cargo/:cargo/editors-summary', async (req, res) => {
     const { cargo } = req.params; // ← AQUI ESTÁ O CARGO!
     const { startDate, endDate } = req.query;
 
-    // DEBUG TEMPORÁRIO (pode remover depois)
-    console.log('Cargo solicitado:', cargo);
-    console.log('Período:', startDate, 'até', endDate);
-
     if (!startDate || !endDate) {
       return res.json([]);
     }
