@@ -3,8 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('./db.js');
 
-// Mapeamento de cargos (mantido aqui para a nova rota funcionar)
-// Dentro do routes.js (no início do arquivo)
+// Mapeamento de cargos (DEVE SER IGUAL NO FRONTEND!)
 const CARGOS_MOCK = {
   'everton.marques': 'Web Designer',
   'flavio.junior': 'Roteirista',
@@ -45,7 +44,7 @@ router.post('/login', (req, res) => {
 router.get('/data', async (req, res) => {
   try {
     const { search, startDate, endDate, page = 1, limit = 9 } = req.query;
-
+    
     let values = [];
     let whereClauses = [];
     let idx = 1;
@@ -123,7 +122,7 @@ router.get('/data', async (req, res) => {
   }
 });
 
-// ROTA: Resumo de TODOS os cargos (para o Nível 1)
+// NOVA ROTA: Resumo de TODOS os cargos (para o Nível 1)
 router.get('/cargos-summary', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -132,31 +131,25 @@ router.get('/cargos-summary', async (req, res) => {
       return res.json([]);
     }
 
-    // Monta mapeamento cargo → editores
     const cargoToEditors = {};
     Object.entries(CARGOS_MOCK).forEach(([editor, cargo]) => {
       if (!cargoToEditors[cargo]) cargoToEditors[cargo] = [];
       cargoToEditors[cargo].push(editor);
     });
 
-    // Consulta todos os cargos de uma vez
     const result = await pool.query(`
       SELECT 
         editor_name,
         SUM(minutes_added) as total_minutes
       FROM time_logs
-      WHERE event_time >= $1 
-        AND event_time <= $2
+      WHERE event_time >= $1 AND event_time <= $2
       GROUP BY editor_name
     `, [startDate, endDate]);
 
-    // Agrega por cargo
     const cargoTotals = {};
     result.rows.forEach(row => {
       const editor = row.editor_name;
       const minutes = Number(row.total_minutes) || 0;
-
-      // Encontra o cargo do editor
       const cargo = Object.entries(CARGOS_MOCK).find(([e]) => e === editor)?.[1] || 'Cargo Não Mapeado';
 
       if (!cargoTotals[cargo]) {
@@ -166,7 +159,6 @@ router.get('/cargos-summary', async (req, res) => {
       cargoTotals[cargo].editors.add(editor);
     });
 
-    // Garante que todos os cargos apareçam (mesmo com 0)
     Object.keys(cargoToEditors).forEach(cargo => {
       if (!cargoTotals[cargo]) {
         cargoTotals[cargo] = { totalMinutes: 0, editors: new Set(cargoToEditors[cargo]) };
@@ -177,7 +169,7 @@ router.get('/cargos-summary', async (req, res) => {
       cargoName,
       totalMinutes: data.totalMinutes,
       totalEditors: data.editors.size,
-      lastEdit: null 
+      lastEdit: null
     }));
 
     res.json(summary.sort((a, b) => b.totalMinutes - a.totalMinutes));
@@ -188,9 +180,10 @@ router.get('/cargos-summary', async (req, res) => {
   }
 });
 
+// ROTA: Resumo de editores por cargo (Nível 2)
 router.get('/cargo/:cargo/editors-summary', async (req, res) => {
   try {
-    const { cargo } = req.params; 
+    const { cargo } = req.params;
     const { startDate, endDate } = req.query;
 
     if (!startDate || !endDate) {
@@ -204,12 +197,7 @@ router.get('/cargo/:cargo/editors-summary', async (req, res) => {
     });
 
     const editors = cargoToEditors[cargo] || [];
-    console.log('Editores mapeados para esse cargo:', editors); 
-
-    if (editors.length === 0) {
-      console.log('Nenhum editor mapeado para o cargo:', cargo);
-      return res.json([]);
-    }
+    if (editors.length === 0) return res.json([]);
 
     const result = await pool.query(`
       SELECT 
@@ -232,15 +220,12 @@ router.get('/cargo/:cargo/editors-summary', async (req, res) => {
       lastEdit: row.lastEdit
     }));
 
-    console.log('Resumo retornado:', summary); 
     res.json(summary);
-
   } catch (err) {
     console.error('Erro em /cargo/:cargo/editors-summary:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 // ROTA DE RANKING (TOP EDITORES)
 router.get('/ranking', async (req, res) => {
   const { startDate, endDate } = req.query;

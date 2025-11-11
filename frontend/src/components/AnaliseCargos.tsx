@@ -151,6 +151,7 @@ export default function AnaliseCargos({
 
   // === NÍVEL 2: EDITORES (agora vem direto do backend!) ===
   const aggregatedEditors = editorsSummary;
+  
 
   const pageCount = Math.ceil(totalCount / limit);
 
