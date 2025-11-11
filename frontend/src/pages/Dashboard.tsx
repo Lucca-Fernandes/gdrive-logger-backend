@@ -5,24 +5,23 @@ import StatsCharts from '../components/StatsCharts';
 import AppHeader from '../components/AppHeader';
 import AnaliseCargos from '../components/AnaliseCargos';
 import {
-  Paper, Box, TextField, InputAdornment,
+  Paper, Box, TextField, InputAdornment,  
   Button, Card, CardContent, ToggleButton, ToggleButtonGroup, Typography
 } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
-import { Search, Refresh, AccessTime, Person, InsertDriveFile, Download } from '@mui/icons-material';
+import { Search, Refresh, AccessTime, Person, InsertDriveFile } from '@mui/icons-material';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'; 
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 
 const SIDEBAR_WIDTH = 250;
 const API_URL = 'https://gdrive-logger-backend.onrender.com/api';
 
-// Interfaces
-interface Editor {
-  documentId: string; documentName: string; documentLink: string;
-  folderPath: string; editorName: string; totalMinutes: number; lastEdit: string | null;
+interface Editor { 
+  documentId: string; documentName: string; documentLink: string; 
+  folderPath: string; editorName: string; totalMinutes: number; lastEdit: string | null; 
 }
 interface EixoSummary { eixo: string; totalMinutes: number; }
 interface EditorRanking { editorName: string; total: number; }
@@ -50,91 +49,84 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [limit] = useState(9);
-
+  
   // DRILL-DOWN
   const [selectedCargo, setSelectedCargo] = useState<string | undefined>(undefined);
   const [selectedEditor, setSelectedEditor] = useState<string | undefined>(undefined);
   const [editorsSummary, setEditorsSummary] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
-    const start = datePreset === 'custom' && !startDate ? null : startDate;
-    const end = datePreset === 'custom' && !endDate ? null : endDate;
+  if (!startDate || !endDate) return;
 
-    if (!start || !end) {
-      return setData([]), setLoading(false);
+  setLoading(true);
+  setError(false);
+
+  try {
+    const dateParams = { 
+      startDate: startDate.toISOString(), 
+      endDate: endDate.toISOString() 
+    };
+
+    // === NÍVEL 2: Dentro de um cargo (mostra editores) ===
+    if (selectedCargo && !selectedEditor) {
+      const [editorsRes] = await Promise.all([
+        axios.get(`${API_URL}/cargo/${selectedCargo}/editors-summary`, { params: dateParams })
+      ]);
+      setEditorsSummary(editorsRes.data);
+      setData([]);
+      setLoading(false);
+      return;
     }
 
-    setError(false);
-    setLoading(true);
+    // === NÍVEL 3: Dentro de um editor (mostra documentos) ===
+    if (selectedEditor) {
+      const dataRes = await axios.get(`${API_URL}/data`, { 
+        params: { ...dateParams, search: selectedEditor, page, limit } 
+      });
+      setData(dataRes.data.data);
+      setTotalCount(dataRes.data.total);
+      setLoading(false);
+      return;
+    }
 
-    try {
-  const dateParams = { 
-    startDate: start.toISOString(), 
-    endDate: end.toISOString() 
-  };
-
-  const apiSearchTerm = search || undefined;
-
-      // === DRILL-DOWN: NÍVEL 2 (editores de um cargo) ===
-  if (selectedCargo && !selectedEditor) {
-    const [summaryRes, cargoStatsRes] = await Promise.all([
-      axios.get(`${API_URL}/cargo/${selectedCargo}/editors-summary`, { params: dateParams }),
-      axios.get(`${API_URL}/cargo/${selectedCargo}/stats`, { params: dateParams })
-    ]);
-    setEditorsSummary(summaryRes.data);
-    setStatsData(cargoStatsRes.data); // ← STATS DO CARGO!
-    setData([]);
-    setLoading(false);
-    return;
-  }
-
-      // === DRILL-DOWN: NÍVEL 3 (documentos de um editor) ===
-  if (selectedEditor) {
-    const editorStatsRes = await axios.get(`${API_URL}/editor/${selectedEditor}/stats`, { params: dateParams });
-    setStatsData(editorStatsRes.data); // ← STATS DO EDITOR!
-  }
-
-  // === BUSCA ou NÍVEL 3 ===
-  const dataParams: any = {
-    ...dateParams,
-    search: apiSearchTerm,
-    page,
-    limit
-  };
-
-      const dataRes = await axios.get(`${API_URL}/data`, { params: dataParams });
-  setData(dataRes.data.data);
-  setTotalCount(dataRes.data.total);
-
-      // === NÍVEL 1: TELA INICIAL (sem cargo, sem busca) ===
-  if (!selectedCargo && !selectedEditor && !apiSearchTerm) {
+    // === NÍVEL 1: Tela inicial (com ou sem busca) ===
     const [statsRes, rankingRes, eixosRes, cargosRes] = await Promise.all([
       axios.get(`${API_URL}/stats-summary`, { params: dateParams }),
       axios.get(`${API_URL}/ranking`, { params: dateParams }),
       axios.get(`${API_URL}/eixos-summary`, { params: dateParams }),
-      axios.get(`${API_URL}/cargos-summary`, { params: dateParams })
+      axios.get(`${API_URL}/cargos-summary`, { params: dateParams }) // AQUI ESTAVA FALTANDO!
     ]);
+
     setStatsData(statsRes.data);
     setEditorPieData(rankingRes.data);
     setEixosData(eixosRes.data);
-    setCargosSummary(cargosRes.data);
-  }
+    setCargosSummary(cargosRes.data); // AGORA VAI PREENCHER!
 
-} catch (err) {
-  console.error('Erro no fetchData:', err);
-  setError(true);
-} finally {
-  setLoading(false);
-}
-  }, [startDate, endDate, limit, search, datePreset, selectedCargo, selectedEditor, page]);
+    // Se tem busca, carrega documentos com busca
+    if (search) {
+      const dataRes = await axios.get(`${API_URL}/data`, { 
+        params: { ...dateParams, search, page, limit } 
+      });
+      setData(dataRes.data.data);
+      setTotalCount(dataRes.data.total);
+    } else {
+      setData([]);
+      setTotalCount(0);
+    }
+
+  } catch (err: any) {
+    console.error('Erro no fetchData:', err);
+    setError(true);
+  } finally {
+    setLoading(false);
+  }
+}, [startDate, endDate, search, selectedCargo, selectedEditor, page, limit]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleSearch = () => {
-    setSelectedCargo(undefined);
-    setSelectedEditor(undefined);
     setPage(1);
   };
 
@@ -189,8 +181,6 @@ export default function Dashboard() {
     setSelectedCargo(undefined);
     setSelectedEditor(undefined);
   };
-
-  
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ptBR}>

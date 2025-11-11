@@ -44,7 +44,7 @@ interface AnaliseCargosProps {
   selectedCargo: string | undefined;
   selectedEditor: string | undefined;
   editorsSummary: EditorSummary[];
-  cargosSummary: CargoSummary[]; // ← ADICIONADO
+  cargosSummary: CargoSummary[];
 
   onCargoSelect: (cargoName: string) => void;
   onEditorSelect: (editorName: string) => void;
@@ -72,7 +72,7 @@ export default function AnaliseCargos({
   selectedCargo,
   selectedEditor,
   editorsSummary,
-  cargosSummary, // ← RECEBIDO DO DASHBOARD
+  cargosSummary,
   onCargoSelect,
   onEditorSelect,
   onBackToEditors,
@@ -86,8 +86,11 @@ export default function AnaliseCargos({
     fetchData();
   };
 
-  // USA DIRETAMENTE O QUE VEM DO BACKEND
+  // === DADOS CORRETOS PARA CADA NÍVEL ===
   const aggregatedCargos: CargoSummary[] = selectedCargo || selectedEditor ? [] : cargosSummary;
+  
+  // AQUI ESTAVA O BUG: editorsSummary já vem do backend certinho!
+  const aggregatedEditors: EditorSummary[] = selectedCargo ? editorsSummary : [];
 
   // === RENDER DOCUMENTOS (NÍVEL 3) ===
   const renderDocumentList = () => (
@@ -176,13 +179,13 @@ export default function AnaliseCargos({
 
       {loading && <LinearProgress sx={{ my: 2 }} />}
 
-      {editorsSummary.length === 0 && !loading ? (
+      {aggregatedEditors.length === 0 && !loading ? (
         <Alert severity="info" sx={{ my: 2 }}>
           Nenhum editor encontrado no cargo "{selectedCargo}" com atividades no período.
         </Alert>
       ) : (
         <Grid container spacing={3}>
-          {editorsSummary.map(editor => {
+          {aggregatedEditors.map((editor: EditorSummary) => {
             const hasActivity = editor.totalMinutes > 0;
             return (
               <Grid xs={12} sm={6} md={3} key={editor.editorName}>
