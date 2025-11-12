@@ -56,71 +56,67 @@ export default function Dashboard() {
   const [editorsSummary, setEditorsSummary] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
-  if (!startDate || !endDate) return;
+    if (!startDate || !endDate) return;
 
-  setLoading(true);
-  setError(false);
+    setLoading(true);
+    setError(false);
 
-  try {
-    const dateParams = { 
-      startDate: startDate.toISOString(), 
-      endDate: endDate.toISOString() 
-    };
+    try {
+      const dateParams = { 
+        startDate: startDate.toISOString(), 
+        endDate: endDate.toISOString() 
+      };
 
-    // === NÍVEL 2: Dentro de um cargo (mostra editores) ===
-    if (selectedCargo && !selectedEditor) {
-      const [editorsRes] = await Promise.all([
-        axios.get(`${API_URL}/cargo/${selectedCargo}/editors-summary`, { params: dateParams })
+      if (selectedCargo && !selectedEditor) {
+        const [editorsRes] = await Promise.all([
+          axios.get(`${API_URL}/cargo/${selectedCargo}/editors-summary`, { params: dateParams })
+        ]);
+        setEditorsSummary(editorsRes.data);
+        setData([]);
+        setLoading(false);
+        return;
+      }
+
+      if (selectedEditor) {
+        const dataRes = await axios.get(`${API_URL}/data`, { 
+          params: { ...dateParams, search: selectedEditor, page, limit } 
+        });
+        setData(dataRes.data.data);
+        setTotalCount(dataRes.data.total);
+        setLoading(false);
+        return;
+      }
+
+      const [statsRes, rankingRes, eixosRes, cargosRes] = await Promise.all([
+        axios.get(`${API_URL}/stats-summary`, { params: dateParams }),
+        axios.get(`${API_URL}/ranking`, { params: dateParams }),
+        axios.get(`${API_URL}/eixos-summary`, { params: dateParams }),
+        axios.get(`${API_URL}/cargos-summary`, { params: dateParams })
       ]);
-      setEditorsSummary(editorsRes.data);
-      setData([]);
+
+      setStatsData(statsRes.data);
+      setEditorPieData(rankingRes.data);
+      setEixosData(eixosRes.data);
+      setCargosSummary(cargosRes.data);
+
+      if (search) {
+        const dataRes = await axios.get(`${API_URL}/data`, { 
+          params: { ...dateParams, search, page, limit } 
+        });
+        setData(dataRes.data.data);
+        setTotalCount(dataRes.data.total);
+      } else {
+        setData([]);
+        setTotalCount(0);
+      }
+
+    } catch (err: any) {
+      console.error('Erro no fetchData:', err);
+      setError(true);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // === NÍVEL 3: Dentro de um editor (mostra documentos) ===
-    if (selectedEditor) {
-      const dataRes = await axios.get(`${API_URL}/data`, { 
-        params: { ...dateParams, search: selectedEditor, page, limit } 
-      });
-      setData(dataRes.data.data);
-      setTotalCount(dataRes.data.total);
-      setLoading(false);
-      return;
-    }
-
-    // === NÍVEL 1: Tela inicial (com ou sem busca) ===
-    const [statsRes, rankingRes, eixosRes, cargosRes] = await Promise.all([
-      axios.get(`${API_URL}/stats-summary`, { params: dateParams }),
-      axios.get(`${API_URL}/ranking`, { params: dateParams }),
-      axios.get(`${API_URL}/eixos-summary`, { params: dateParams }),
-      axios.get(`${API_URL}/cargos-summary`, { params: dateParams }) // AQUI ESTAVA FALTANDO!
-    ]);
-
-    setStatsData(statsRes.data);
-    setEditorPieData(rankingRes.data);
-    setEixosData(eixosRes.data);
-    setCargosSummary(cargosRes.data); // AGORA VAI PREENCHER!
-
-    // Se tem busca, carrega documentos com busca
-    if (search) {
-      const dataRes = await axios.get(`${API_URL}/data`, { 
-        params: { ...dateParams, search, page, limit } 
-      });
-      setData(dataRes.data.data);
-      setTotalCount(dataRes.data.total);
-    } else {
-      setData([]);
-      setTotalCount(0);
-    }
-
-  } catch (err: any) {
-    console.error('Erro no fetchData:', err);
-    setError(true);
-  } finally {
-    setLoading(false);
-  }
-}, [startDate, endDate, search, selectedCargo, selectedEditor, page, limit]);
+  }, [startDate, endDate, search, selectedCargo, selectedEditor, page, limit]);
 
   useEffect(() => {
     fetchData();
@@ -189,11 +185,13 @@ export default function Dashboard() {
         <Box component="main" sx={{ flexGrow: 1, ml: `${SIDEBAR_WIDTH}px`, width: { xs: '100%', md: `calc(100% - ${SIDEBAR_WIDTH}px)` } }}>
           <Box sx={{ py: 3, px: 3 }}>
             <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }}>
+              {/* FILTROS DE DATA E BUSCA */}
               <Box mb={4}>
                 <Grid container spacing={3} alignItems="center">
+                  {/* Date Pickers (apenas no modo custom) */}
                   {datePreset === 'custom' && (
                     <>
-                      <Grid xs={12} sm={6} md={2.5}>
+                      <Grid xs={12} sm={6} md={3}>
                         <DatePicker
                           label="Data início"
                           value={startDate}
@@ -207,7 +205,7 @@ export default function Dashboard() {
                           }}
                         />
                       </Grid>
-                      <Grid xs={12} sm={6} md={2.5}>
+                      <Grid xs={12} sm={6} md={3}>
                         <DatePicker
                           label="Data fim"
                           value={endDate}
@@ -223,40 +221,74 @@ export default function Dashboard() {
                       </Grid>
                     </>
                   )}
-                  <Grid md={datePreset === 'custom' ? 4 : 8} display="flex" gap={1}>
-                    <ToggleButtonGroup
-                      value={datePreset}
-                      exclusive
-                      onChange={handleDatePresetChange}
-                      size="small"
-                      sx={{
-                        height: 40,
-                        borderRadius: 3,
-                        bgcolor: '#f5f5f5',
-                        '& .MuiToggleButtonGroup-grouped': {
-                          border: 0,
-                          borderRadius: 2,
-                          fontWeight: 500,
-                          '&.Mui-selected': { bgcolor: '#1976d2', color: 'white' }
-                        }
-                      }}
-                    >
-                      <ToggleButton value="hoje">HOJE</ToggleButton>
-                      <ToggleButton value="semana">SEMANA</ToggleButton>
-                      <ToggleButton value="mes">MÊS</ToggleButton>
-                      <ToggleButton value="custom">PERÍODO</ToggleButton>
-                    </ToggleButtonGroup>
-                    <Button
-                      onClick={handleSearch}
-                      variant="contained"
-                      startIcon={<Refresh />}
-                      size="small"
-                      sx={{ height: 40, minWidth: '100px', borderRadius: 3, fontWeight: 500 }}
-                    >
-                      BUSCAR
-                    </Button>
+
+                  {/* Botões de Período + BUSCAR (alinhado à direita) */}
+                  <Grid xs={12} md={datePreset === 'custom' ? 6 : 12}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                      {/* Botões de período */}
+                      <ToggleButtonGroup
+                        value={datePreset}
+                        exclusive
+                        onChange={handleDatePresetChange}
+                        size="small"
+                        sx={{
+                          display: 'flex',
+                          gap: 1.5,
+                          flexWrap: 'wrap',
+                          '& .MuiToggleButton-root': {
+                            borderRadius: 3,
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            px: 2.5,
+                            py: 1,
+                            border: '1px solid #1976d2',
+                            color: '#1976d2',
+                            bgcolor: 'transparent',
+                            '&.Mui-selected': {
+                              bgcolor: '#1976d2',
+                              color: 'white',
+                              '&:hover': { bgcolor: '#1565c0' },
+                            },
+                            '&:hover': {
+                              bgcolor: 'rgba(25, 118, 210, 0.08)',
+                            },
+                          },
+                        }}
+                      >
+                        <ToggleButton value="hoje">HOJE</ToggleButton>
+                        <ToggleButton value="semana">SEMANA</ToggleButton>
+                        <ToggleButton value="mes">MÊS</ToggleButton>
+                        <ToggleButton value="custom">PERÍODO</ToggleButton>
+                      </ToggleButtonGroup>
+
+                      {/* Botão BUSCAR à direita */}
+                      <Button
+                        onClick={handleSearch}
+                        variant="contained"
+                        startIcon={<Refresh />}
+                        size="small"
+                        sx={{
+                          height: 40,
+                          borderRadius: 3,
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                          px: 3,
+                          textTransform: 'none',
+                          minWidth: 120,
+                          boxShadow: 2,
+                          '&:hover': { boxShadow: 4 },
+                        }}
+                      >
+                        BUSCAR
+                      </Button>
+                    </Box>
                   </Grid>
-                  <Grid md={datePreset === 'custom' ? 2 : 4}>
+                </Grid>
+
+                {/* Campo de busca (abaixo dos filtros) */}
+                <Grid container spacing={3} mt={2}>
+                  <Grid xs={12}>
                     <TextField
                       fullWidth
                       size="small"
@@ -326,9 +358,7 @@ export default function Dashboard() {
                       </Card>
                     </Grid>
                   </Grid>
-                  <StatsCharts editorPieData={editorPieData}
-                    cargosSummary={cargosSummary}
-                    showCargoDistribution={true} />
+                  <StatsCharts editorPieData={editorPieData} cargosSummary={cargosSummary} showCargoDistribution={false} />
                 </>
               )}
 

@@ -3,7 +3,6 @@ import { useMemo } from 'react';
 import { BarChart } from '@mui/x-charts';
 import { Card, CardContent, Typography, Box } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
-import CargoPieChart from './CargoPieChart';
 
 interface EditorRanking {
   editorName: string;
@@ -23,7 +22,6 @@ interface StatsChartsProps {
 
 export default function StatsCharts({
   editorPieData,
-  cargosSummary,
   showCargoDistribution = true,
 }: StatsChartsProps) {
 
@@ -67,19 +65,6 @@ export default function StatsCharts({
             </CardContent>
           </Card>
         </Grid>
-
-        {showCargoDistribution && (
-          <Grid xs={12} md={4}>
-            <Card elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2, height: '100%' }}>
-              <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Typography variant="subtitle1" fontWeight="bold" mb={2}>
-                  Distribuição por Cargo
-                </Typography>
-                <CargoPieChart cargosSummary={cargosSummary} />
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
       </Grid>
     </Box>
   );

@@ -7,6 +7,7 @@ import Grid from '@mui/material/Unstable_Grid2';
 import { Person, AccessTime, Folder, Link as LinkIcon, ArrowBack } from '@mui/icons-material';
 import { format, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import CargoPieChart from './CargoPieChart';
 
 // Interfaces
 interface Editor {
@@ -88,7 +89,7 @@ export default function AnaliseCargos({
 
   // === DADOS CORRETOS PARA CADA NÍVEL ===
   const aggregatedCargos: CargoSummary[] = selectedCargo || selectedEditor ? [] : cargosSummary;
-  
+
   // AQUI ESTAVA O BUG: editorsSummary já vem do backend certinho!
   const aggregatedEditors: EditorSummary[] = selectedCargo ? editorsSummary : [];
 
@@ -227,10 +228,9 @@ export default function AnaliseCargos({
     </>
   );
 
-  // === RENDER CARGOS (NÍVEL 1) ===
   const renderCargoList = () => (
     <>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: "bold" }}>
         Análise de Produtividade por Cargo
       </Typography>
       <Typography variant="subtitle1" color="text.secondary" mb={4}>
@@ -245,35 +245,71 @@ export default function AnaliseCargos({
         </Alert>
       ) : (
         <Grid container spacing={3}>
-          {aggregatedCargos
-            .filter(c => c.cargoName !== 'Cargo Não Mapeado')
-            .map(cargo => {
-              const hasActivity = cargo.totalMinutes > 0;
-              return (
-                <Grid xs={12} sm={6} md={3} key={cargo.cargoName}>
-                  <Card
-                    onClick={() => onCargoSelect(cargo.cargoName)}
-                    sx={{
-                      cursor: 'pointer',
-                      p: 3,
-                      textAlign: 'center',
-                      height: '100%',
-                      transition: '0.2s',
-                      '&:hover': { bgcolor: 'primary.light', boxShadow: 3 },
-                    }}
-                  >
-                    <Folder fontSize="large" color={hasActivity ? 'primary' : 'disabled'} />
-                    <Typography variant="h6" mt={1}>{cargo.cargoName}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {cargo.totalEditors} Editores
-                    </Typography>
-                    <Typography variant="body2" fontWeight="bold" color={hasActivity ? 'success.main' : 'error.main'} mt={1}>
-                      {minutesToHours(cargo.totalMinutes)} horas
-                    </Typography>
-                  </Card>
-                </Grid>
-              );
-            })}
+          {/* ---------- ESQUERDA – CARDS COM TAMANHO FIXO ---------- */}
+          <Grid xs={12} md={6}>
+            <Box
+              sx={{
+                display: "grid",
+                gap: 3,
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                // garante que a grade não ultrapasse a metade da tela
+                maxWidth: "100%",
+              }}
+            >
+              {aggregatedCargos
+                .filter((c) => c.cargoName !== "Cargo Não Mapeado")
+                .map((cargo) => {
+                  const hasActivity = cargo.totalMinutes > 0;
+                  return (
+                    <Card
+                      key={cargo.cargoName}
+                      onClick={() => onCargoSelect(cargo.cargoName)}
+                      sx={{
+                        cursor: "pointer",
+                        p: 3,
+                        textAlign: "center",
+                        height: 160,               // ALTURA FIXA
+                        transition: "0.2s",
+                        "&:hover": { bgcolor: "primary.light", boxShadow: 3 },
+                      }}
+                    >
+                      <Folder
+                        fontSize="large"
+                        color={hasActivity ? "primary" : "disabled"}
+                      />
+                      <Typography variant="h6" mt={1} noWrap>
+                        {cargo.cargoName}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {cargo.totalEditors} Editores
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        color={hasActivity ? "success.main" : "error.main"}
+                        mt={1}
+                      >
+                        {minutesToHours(cargo.totalMinutes)} horas
+                      </Typography>
+                    </Card>
+                  );
+                })}
+            </Box>
+          </Grid>
+
+          {/* DIREITA: Gráfico de Pizza */}
+          <Grid xs={12} md={6}>
+            <Card sx={{ height: '100%', minHeight: 420, p: 2, boxShadow: 3, borderRadius: 3 }}>
+              <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="h6" fontWeight="bold" gutterBottom textAlign="center">
+                  Distribuição por Cargo
+                </Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                  <CargoPieChart cargosSummary={cargosSummary} />
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
       )}
     </>
