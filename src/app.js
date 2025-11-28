@@ -41,7 +41,7 @@ async function setPageToken(token) {
     `, [TOKEN_KEY, token]);
   } catch (err) {
     console.error('[Token] Erro ao salvar:', err.message);
-    throw err; 
+    throw err;
   }
 }
 
@@ -50,10 +50,10 @@ const folderCache = new Map();
 async function buildFolderPath(folderId, drive) {
   if (folderCache.has(folderId)) return folderCache.get(folderId);
   if (!folderId || folderId === 'root') return '/';
-  
+
   try {
-    const res = await drive.files.get({ 
-      fileId: folderId, 
+    const res = await drive.files.get({
+      fileId: folderId,
       fields: 'name, parents',
       supportsAllDrives: true
     });
@@ -76,10 +76,10 @@ async function buildFolderPath(folderId, drive) {
 async function cicloMonitor() {
   console.log('[Monitor] === INICIANDO CICLO ===');
   const drive = getClient();
-  
+
   // 1. Obtém o token salvo no DB (ex: 51063)
   let dbPageToken = await getPageToken();
-  
+
   if (!dbPageToken) {
     // Lógica de primeira execução (continua igual)
     console.log('[Monitor] Primeira execução: obtendo token inicial...');
@@ -115,62 +115,88 @@ async function cicloMonitor() {
     } catch (err) {
       console.error('[Monitor] ERRO CRÍTICO na API (changes.list):', err.message);
       if (err.message.includes('Page token is not valid')) {
-         console.error('[Monitor] Token de página inválido. Resetando token...');
-         await setPageToken(null); // Reseta o token para um novo
+        console.error('[Monitor] Token de página inválido. Resetando token...');
+        await setPageToken(null); // Reseta o token para um novo
       }
       return; // Para o ciclo
     }
 
     const changes = res.data.changes || [];
-    
+
     if (changes.length > 0) {
       totalChanges += changes.length;
       console.log(`[Monitor] ... processando ${changes.length} mudança(s) ...`);
-      
+
       // 3. Processa o lote atual de mudanças
       for (const change of changes) {
         try {
           const file = change.file;
-          if (!file?.id || !file?.modifiedTime || !file.lastModifyingUser) continue; 
+          if (!file?.id || !file?.modifiedTime || !file.lastModifyingUser) continue;
 
           const editorName = file.lastModifyingUser?.displayName || 'desconhecido';
           const agora = new Date(file.modifiedTime);
           let tempoAdd = 0;
 
-          // Lógica de cálculo de tempo (continua igual)
+          // Busca o último registro deste usuário neste documento
           const current = await pool.query(
             `SELECT "event_time" FROM time_logs 
-             WHERE "document_id" = $1 AND "editor_name" = $2 
-             ORDER BY "event_time" DESC LIMIT 1`,
+   WHERE "document_id" = $1 AND "editor_name" = $2 
+   ORDER BY "event_time" DESC LIMIT 1`,
             [file.id, editorName]
           );
 
           if (current.rows.length > 0) {
             const ultimoEditDoDB = new Date(current.rows[0].event_time);
-            const diff = (agora - ultimoEditDoDB) / 1000; 
+            // Diferença em SEGUNDOS
+            const diff = (agora - ultimoEditDoDB) / 1000;
 
+            // Validação de segurança para datas futuras ou erros de relógio
             if (agora < ultimoEditDoDB) {
-              continue; // Ignora evento antigo
+              continue;
             }
-            if (diff >= 30 && diff <= LIMITE_INATIVO) {
+
+            // === AQUI ESTÁ A LÓGICA REFINADA ===
+
+            if (diff < 30) {
+              // CENÁRIO 1: Menos de 30 segundos (Debounce)
+              // Ignora. O usuário provavelmente deu Ctrl+S várias vezes seguidas.
+              console.log(`[Monitor] Ignorando edição rápida (${diff}s) em ${file.name}`);
+              continue;
+
+            } else if (diff <= 3000) {
+              // CENÁRIO 2: Sessão contínua (Entre 30s e 50min)
+              // 3000 segundos = 50 minutos
+              // O usuário estava trabalhando. Somamos o tempo que passou desde a última edição.
               tempoAdd = Math.round(diff / 60 * 10) / 10;
+
+            } else {
+              // CENÁRIO 3: Nova Sessão (Mais de 50min parado)
+              // O usuário foi almoçar ou parou. Não somamos os 50min+ de inatividade.
+              // Mas precisamos registrar este evento como o INÍCIO de uma nova sessão.
+              // Atribuímos 0.5 min para marcar presença e atualizar o "event_time" no banco.
+              tempoAdd = 0.5;
+              console.log(`[Monitor] Nova sessão iniciada após ${Math.round(diff / 60)}min de pausa.`);
             }
+
           } else {
-            tempoAdd = 0.5; // Primeira edição
+            // CENÁRIO 4: Primeira vez tocando no arquivo (sem histórico)
+            tempoAdd = 0.5;
           }
 
+          // Só grava se tiver tempo a adicionar
           if (tempoAdd > 0) {
+            // ... (código de insert igual ao anterior) ...
             const documentLink = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
             let folderPath = '/';
             if (file.parents && file.parents.length > 0) {
               folderPath = await buildFolderPath(file.parents[0], drive);
             }
-            
+
             await pool.query(`
-              INSERT INTO time_logs 
-                (document_id, document_name, document_link, folder_path, editor_name, minutes_added, event_time)
-              VALUES ($1, $2, $3, $4, $5, $6, $7)
-            `, [
+    INSERT INTO time_logs 
+      (document_id, document_name, document_link, folder_path, editor_name, minutes_added, event_time)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+  `, [
               file.id, file.name || 'Sem nome', documentLink, folderPath, editorName, tempoAdd, agora.toISOString()
             ]);
             console.log(`[Neon] +${tempoAdd} min → ${file.name} (${editorName})`);
@@ -221,7 +247,7 @@ async function cicloMonitor() {
         setTimeout(runCycle, TEMPO_CICLO);
       }
     };
-    
+
     await runCycle();
 
     const PORT = process.env.PORT || 10000;
