@@ -70,14 +70,14 @@ export default function LoginPage() {
                         component="img"
                         sx={{
                             m: 1,
-                            height: 150,
+                            height: 230,
                         }}
                         alt="Logo da Empresa"
                         src="./logo_NIC-PNG.png" />
 
 
 
-                    <Box component="form" onSubmit={handleLogin} noValidate sx={{ mt: 1 }}>
+                    <Box component="form" onSubmit={handleLogin} noValidate sx={{ mt: 0 }}>
                         <TextField
                             margin="normal"
                             required
